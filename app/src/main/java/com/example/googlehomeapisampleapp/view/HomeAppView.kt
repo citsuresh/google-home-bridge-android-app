@@ -15,6 +15,8 @@ limitations under the License.
 
 package com.example.googlehomeapisampleapp.view
 
+import android.content.Intent
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -49,10 +51,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.example.googlehomeapisampleapp.AccountSwitchProxyActivity
+import com.example.googlehomeapisampleapp.MainActivity
+import com.example.googlehomeapisampleapp.commissioning.qrcodescanner.MatterQrCodeScanner
 import com.example.googlehomeapisampleapp.ui.theme.GoogleHomeAPISampleAppTheme
 import com.example.googlehomeapisampleapp.view.automations.ActionView
 import com.example.googlehomeapisampleapp.view.automations.AutomationView
@@ -71,16 +78,20 @@ import com.example.googlehomeapisampleapp.viewmodel.automations.DraftViewModel
 import com.example.googlehomeapisampleapp.viewmodel.automations.StarterViewModel
 import com.example.googlehomeapisampleapp.viewmodel.devices.DeviceViewModel
 import com.example.googlehomeapisampleapp.viewmodel.structures.RoomViewModel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 
+/**
+ * The main Composable function for the Google Home API Sample App.
+ * This function displays the appropriate view based on the state of the [HomeAppViewModel].
+ *
+ * @param homeAppVM The [HomeAppViewModel] providing the data and logic for the UI.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeAppView (homeAppVM: HomeAppViewModel) {
+fun HomeAppView(homeAppVM: HomeAppViewModel) {
     /** Value tracking whether a user is signed-in on the app **/
     val isSignedIn: Boolean = homeAppVM.homeApp.permissionsManager.isSignedIn.collectAsState().value
-
     /** Values tracking what is being selected on the app **/
     val selectedTab: HomeAppViewModel.NavigationTab by homeAppVM.selectedTab.collectAsState()
     val selectedDeviceVM: DeviceViewModel? by homeAppVM.selectedDeviceVM.collectAsState()
@@ -94,8 +105,27 @@ fun HomeAppView (homeAppVM: HomeAppViewModel) {
     val moveDeviceFor = remember { mutableStateOf<DeviceViewModel?>(null) }
     val launchHubDiscovery = remember { mutableStateOf(false) }
 
+    val showQrCodeScanner by homeAppVM.showQrCodeScanner.collectAsStateWithLifecycle()
+
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        homeAppVM.navigateToProxyActivity.collect {
+            Log.i(
+                MainActivity.TAG,
+                "HomeActivity: Received navigate event from ViewModel. Launching AccountSwitchProxyActivity.",
+            )
+            val intent =
+                Intent(context, AccountSwitchProxyActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                }
+            context.startActivity(intent)
+            // Optional: Finish the current MainActivity instance
+            // activity.finish()
+        }
+    }
 
     val hubActivationLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -121,12 +151,12 @@ fun HomeAppView (homeAppVM: HomeAppViewModel) {
      *
      * This loop helps ensure that permission state remains accurate in case
      * it changes outside the app(e.g., in Google Home or system settings).
-     */
+     **/
     LaunchedEffect(isSignedIn) {
-        while (homeAppVM.homeApp.permissionsManager.isSignedIn.value) {
-            homeAppVM.homeApp.permissionsManager.refreshPermissions()
-            delay(2000)
-        }
+//        while (homeAppVM.homeApp.permissionsManager.isSignedIn.value) {
+//            homeAppVM.homeApp.permissionsManager.refreshPermissions()
+//            delay(2000)
+//        }
     }
 
 
@@ -135,10 +165,30 @@ fun HomeAppView (homeAppVM: HomeAppViewModel) {
         // Top-level external frame for the views:
         Column(modifier = Modifier.fillMaxSize()) {
             // Top spacer to allocate space for status bar / camera notch:
-            Spacer(modifier = Modifier.height(48.dp).fillMaxWidth().background(Color.Transparent))
+            Spacer(modifier = Modifier
+                .height(48.dp)
+                .fillMaxWidth()
+                .background(Color.Transparent))
 
-            // Primary frame to hold content:
-            Column (modifier = Modifier.weight(1f).fillMaxWidth().background(Color.Transparent)) {
+            if (showQrCodeScanner) {
+                MatterQrCodeScanner(
+                    onQrCodeScanned = { payload ->
+                        // Call the ViewModel to close the scanner and start the commissioning API call
+                        homeAppVM.onCommissionCamera(payload)
+                    },
+                    onPermissionDenied = {
+                        homeAppVM.closeQrCodeScanner()
+                        scope.launch { snackbarHostState.showSnackbar("Camera permission denied.") }
+                    }
+                )
+                return@Column // Critical: Stop rendering the rest of the view hierarchy
+            }
+
+            // Primary frame to hold content (only shown if scanner is NOT active):
+            Column (modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .background(Color.Transparent)) {
 
                 /** Navigation Flow, displays a view depending on the viewmodel state **/
 
@@ -191,7 +241,7 @@ fun HomeAppView (homeAppVM: HomeAppViewModel) {
             }
 
             if (showCreateRoom.value) {
-                var roomName = remember { mutableStateOf("") }
+                val roomName = remember { mutableStateOf("") }
                 AlertDialog(
                     onDismissRequest = { showCreateRoom.value = false },
                     title = { Text("Create Room") },
@@ -219,7 +269,9 @@ fun HomeAppView (homeAppVM: HomeAppViewModel) {
 
             roomSettingsFor.value?.let { activeRoom ->
                 ModalBottomSheet(onDismissRequest = { roomSettingsFor.value = null }) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    Column(Modifier
+                               .fillMaxWidth()
+                               .padding(16.dp)) {
                         Row(modifier = Modifier.fillMaxWidth()) {
                             Text("Room settings", modifier = Modifier.weight(1f))
                             TextButton(onClick = {
@@ -266,7 +318,9 @@ fun HomeAppView (homeAppVM: HomeAppViewModel) {
                     val expanded = remember { mutableStateOf(false) }
                     val selectedRoom = remember { mutableStateOf<RoomViewModel?>(null) }
 
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    Column(Modifier
+                               .fillMaxWidth()
+                               .padding(16.dp)) {
                         Text("Move \"${deviceToMove.name.collectAsState().value}\" to…")
                         Spacer(Modifier.height(12.dp))
 
@@ -279,7 +333,8 @@ fun HomeAppView (homeAppVM: HomeAppViewModel) {
                                 value = selectedRoom.value?.name?.value ?: "Select a room",
                                 onValueChange = {},
                                 trailingIcon = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) },
-                                modifier = Modifier.menuAnchor().fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
                             )
                             ExposedDropdownMenu(
                                 expanded = expanded.value,

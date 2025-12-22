@@ -1,4 +1,3 @@
-
 /* Copyright 2025 Google LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -159,7 +158,7 @@ fun DraftStarterList (draftVM: DraftViewModel) {
         // Button to add a new starter: (original block unchanged)
         Box (Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
             Column (Modifier.fillMaxWidth().clickable {
-                scope.launch { draftVM.selectedStarterVM.emit(StarterViewModel(null)) }
+                scope.launch { draftVM.selectedStarterVM.emit(StarterViewModel()) }
             }) {
                 Text(text = stringResource(R.string.draft_new_starter_name), fontSize = 20.sp)
                 Text(text = stringResource(R.string.draft_new_starter_description), fontSize = 16.sp)
@@ -235,11 +234,30 @@ fun DraftActionItem (actionVM: ActionViewModel, draftVM: DraftViewModel) {
 
 @Composable
 fun LockedDraftPreview(draftVM: DraftViewModel) {
-    // Extract device names from the description since we're using DSL approach
+    val name = draftVM.name.collectAsState().value
     val description = draftVM.description.collectAsState().value
 
-    // Parse the description to extract device names
-    val deviceNames = extractDeviceNamesFromDescription(description)
+    // Use the automation type enum instead of string matching
+    when (draftVM.automationType) {
+        DraftViewModel.AutomationType.ON_OFF -> {
+            OnOffAutomationPreview(description)
+        }
+        DraftViewModel.AutomationType.SPEAKER_AND_FAN -> {
+            SpeakerAndFanAutomationPreview(description)
+        }
+        DraftViewModel.AutomationType.LIGHT_AND_THERMOSTAT -> {
+            LightAndThermostatAutomationPreview(description)
+        }
+        DraftViewModel.AutomationType.CUSTOM -> {
+            // Generic preview for custom automations
+            GenericAutomationPreview(name, description)
+        }
+    }
+}
+
+@Composable
+private fun OnOffAutomationPreview(description: String) {
+    val deviceNames = extractOnOffDeviceNames(description)
     val starterDeviceName = deviceNames.first
     val actionDeviceName = deviceNames.second
 
@@ -275,7 +293,6 @@ fun LockedDraftPreview(draftVM: DraftViewModel) {
     Column (Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth()) {
         Text(text = "Actions", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
-
     // Action preview card
     Card(
         modifier = Modifier
@@ -300,8 +317,229 @@ fun LockedDraftPreview(draftVM: DraftViewModel) {
     }
 }
 
-// Helper function to extract device names from description
-private fun extractDeviceNamesFromDescription(description: String): Pair<String, String> {
+@Composable
+private fun SpeakerAndFanAutomationPreview(description: String) {
+    // Extract device names from description
+    val deviceNames = extractSpeakerAndFanDeviceNames(description)
+    val speakerName = deviceNames.first
+    val fanName = deviceNames.second
+    val plugName = deviceNames.third
+
+    // Starters Section
+    Column (Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth()) {
+        Text(text = "Starters", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+    }
+
+    // Voice starter preview card
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "\"Hey Google, I can't sleep\"",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = "VoiceStarter",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    // Actions Section
+    Column (Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth()) {
+        Text(text = "Actions", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+    }
+
+    // Speaker action preview card
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Play ocean sounds on $speakerName",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = "AssistantFulfillment",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    // Fan action preview card
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Turn ON $fanName",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = "OnCommand",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    // Plug action preview card
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Turn ON $plugName",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = "OnCommand",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun LightAndThermostatAutomationPreview(description: String) {
+    // Starters Section
+    Column (Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth()) {
+        Text(text = "Starters", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+    }
+
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Door unlocked",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = "DoorLockTrait - Unlocked state",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    // Actions Section
+    Column (Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth()) {
+        Text(text = "Actions", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+    }
+
+    // Turn on lights action
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Turn ON all lights",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = "OnOffTrait - OnCommand",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    // Set thermostat action
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Set thermostat to Auto mode",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = "SimplifiedThermostatTrait - Auto mode",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun GenericAutomationPreview(name: String, description: String) {
+    Column (Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth()) {
+        Text(text = "Preview", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+    }
+
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = name,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = description,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+// Helper function to extract device names from OnOff automation description
+private fun extractOnOffDeviceNames(description: String): Pair<String, String> {
     val regex = "Turn off (.+) when (.+) turns off".toRegex()
     val matchResult = regex.find(description)
 
@@ -312,5 +550,22 @@ private fun extractDeviceNamesFromDescription(description: String): Pair<String,
     } else {
         // Fallback to generic names if parsing fails
         Pair("First light", "Second light")
+    }
+}
+
+// Helper function to extract device names from Speaker and Fan automation description
+private fun extractSpeakerAndFanDeviceNames(description: String): Triple<String, String, String> {
+    // Pattern: "Play ocean sounds on [speaker], turn on [fan] and [plug]"
+    val regex = "Play ocean sounds on (.+?), turn on (.+?) and (.+)".toRegex()
+    val matchResult = regex.find(description)
+
+    return if (matchResult != null) {
+        val speaker = matchResult.groupValues[1].trim()
+        val fan = matchResult.groupValues[2].trim()
+        val plug = matchResult.groupValues[3].trim()
+        Triple(speaker, fan, plug)
+    } else {
+        // Fallback to generic names if parsing fails
+        Triple("Speaker", "Fan", "Outlet")
     }
 }

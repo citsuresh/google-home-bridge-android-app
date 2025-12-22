@@ -129,9 +129,6 @@ class Debugger private constructor(homeClientRef: HomeClient) : ViewModel() {
             is Reference -> {
                 Log.d(TAG, "========= Dump automationGraph Reference: ${expression.reference}")
             }
-            else -> {
-                Log.d(TAG, "========= Dump automationGraph Condition: Unknown type $expression")
-            }
         }
         Log.d(TAG, "======= Dump automationGraph expression: Done")
         //

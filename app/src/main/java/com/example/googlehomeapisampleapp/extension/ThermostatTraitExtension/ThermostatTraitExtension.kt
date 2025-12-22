@@ -77,7 +77,7 @@ fun Thermostat.isValidHeatingSetpointUpdate(heatSetPointCentiDegrees: Short): Bo
   if (heatSetPointCentiDegrees < this.getMinHeatSetpointLimit()) return false
   if (heatSetPointCentiDegrees > this.getMaxHeatSetpointLimit()) return false
 
-  if (!this.getSystemMode().isModeHeatingRelated()) return false;
+  if (!this.getSystemMode().isModeHeatingRelated()) return false
 
   if (this.getSystemMode() != ThermostatTrait.SystemModeEnum.Auto) {
     // We got a heating mode, but not heat/cool, so the necessary checks have passed.
@@ -287,7 +287,7 @@ suspend fun Thermostat.setOccupiedHeatingPoint(newValueCentiDegrees: Int) {
  * Checks if this system mode is related to cooling.
  *
  * This is true for modes where the cooling system can be active, such as
- * [Auto], [Cool], or [Precooling].
+ * Auto, Cool, or Precooling.
  *
  * @return `true` if the mode is a cooling-related mode, `false` otherwise.
  */
@@ -301,7 +301,7 @@ fun ThermostatTrait.SystemModeEnum.isModeCoolingRelated(): Boolean {
  * Checks if this system mode is related to heating.
  *
  * This is true for modes where the heating system can be active, such as
- * [Auto], [Heat], or [EmergencyHeat].
+ * Auto, Heat, or EmergencyHeat.
  *
  * @return `true` if the mode is a heating-related mode, `false` otherwise.
  */

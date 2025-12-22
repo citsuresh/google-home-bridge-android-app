@@ -52,6 +52,7 @@ import com.example.googlehomeapisampleapp.viewmodel.automations.ActionViewModel
 import com.example.googlehomeapisampleapp.viewmodel.automations.DraftViewModel
 import com.example.googlehomeapisampleapp.viewmodel.devices.DeviceViewModel
 import com.google.home.Trait
+import com.google.home.matter.standard.FanControl
 import com.google.home.matter.standard.LevelControl
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -162,7 +163,6 @@ fun ActionView (homeAppVM: HomeAppViewModel) {
             Row(horizontalArrangement = Arrangement.Start, modifier = Modifier.fillMaxWidth()) {
                 Box {
                     DropdownMenu(expanded = expandedActionSelection, onDismissRequest = { expandedActionSelection = false }) {
-                        // ...
                         if (!ActionViewModel.actionActions.containsKey(actionTrait.value?.factory))
                             return@DropdownMenu
 
@@ -183,19 +183,22 @@ fun ActionView (homeAppVM: HomeAppViewModel) {
             }
 
             when (actionTrait.value?.factory) {
-                 LevelControl -> {
+                LevelControl -> {
                     Column (Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth()) {
                         Text(stringResource(R.string.action_title_value), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                     }
 
                     Box (Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
                         LevelSlider(value = actionValueLevel.value?.toFloat()!!, low = 0f, high = 254f, steps = 0,
-                                    modifier = Modifier.padding(top = 16.dp),
-                                    onValueChangeFinished = { value : Float -> actionValueLevel.value = value.toUInt().toUByte() },
-                                    isEnabled = true
+                            modifier = Modifier.padding(top = 16.dp),
+                            onValueChangeFinished = { value : Float -> actionValueLevel.value = value.toUInt().toUByte() },
+                            isEnabled = true
                         )
                     }
-
+                }
+                FanControl -> {
+                    // FanControl actions (FAN_OFF, FAN_LOW, FAN_MEDIUM, FAN_HIGH) are self-contained
+                    // No additional value input needed - the action itself specifies the fan mode
                 }
                 else -> {  }
             }
@@ -205,7 +208,7 @@ fun ActionView (homeAppVM: HomeAppViewModel) {
         Column(modifier = Modifier.padding(16.dp).align(Alignment.BottomCenter)) {
             // Check on whether all options are selected:
             val isOptionsSelected: Boolean =
-                        actionDeviceVM.value != null &&
+                actionDeviceVM.value != null &&
                         actionTrait.value != null &&
                         actionAction.value != null
 
@@ -219,7 +222,7 @@ fun ActionView (homeAppVM: HomeAppViewModel) {
                             actionVM.trait.emit(actionTrait.value)
                             actionVM.action.emit(actionAction.value)
                             actionVM.valueLevel.emit(actionValueLevel.value)
-
+                            draftVM.actionVMs.emit(draftVM.actionVMs.value)
                             draftVM.selectedActionVM.emit(null)
                         }
                     })
@@ -229,7 +232,10 @@ fun ActionView (homeAppVM: HomeAppViewModel) {
                     enabled = true,
                     onClick = {
                         scope.launch {
-                            draftVM.actionVMs.value.remove(actionVM)
+                            val updatedList = draftVM.actionVMs.value.toMutableList()
+                            updatedList.remove(actionVM)
+                            draftVM.actionVMs.emit(updatedList)
+
                             draftVM.selectedActionVM.emit(null)
                         }
                     })
@@ -244,8 +250,9 @@ fun ActionView (homeAppVM: HomeAppViewModel) {
                             actionVM.trait.emit(actionTrait.value)
                             actionVM.action.emit(actionAction.value)
                             actionVM.valueLevel.emit(actionValueLevel.value)
-
-                            draftVM.actionVMs.value.add(actionVM)
+                            val updatedList = draftVM.actionVMs.value.toMutableList()
+                            updatedList.add(actionVM)
+                            draftVM.actionVMs.emit(updatedList)
                             draftVM.selectedActionVM.emit(null)
                         }
                     })

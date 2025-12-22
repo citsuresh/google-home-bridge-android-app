@@ -129,7 +129,7 @@ class ChipClient (context: Context) {
      * Suspends until the commissioning process for a device is complete.
      *
      * This method uses [ChipDeviceController.commissionDevice] to initiate the commissioning
-     * process and suspends the coroutine until either [onCommissioningComplete] or [onError]
+     * process and suspends the coroutine until either `onCommissioningComplete` or `onError`
      * is called on the [BaseCompletionListener].
      *
      * @param deviceId The node ID of the device to be commissioned.

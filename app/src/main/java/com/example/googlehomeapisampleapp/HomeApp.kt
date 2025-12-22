@@ -17,122 +17,54 @@ limitations under the License.
 package com.example.googlehomeapisampleapp
 
 import android.content.Context
+import android.util.Log
 import androidx.activity.ComponentActivity
-import com.google.home.DeviceType
-import com.google.home.DeviceTypeFactory
-import com.google.home.FactoryRegistry
 import com.google.home.HomeClient
-import com.google.home.HomeConfig
-import com.google.home.Trait
-import com.google.home.TraitFactory
-import com.google.home.google.AreaAttendanceState
-import com.google.home.google.AreaPresenceState
-import com.google.home.google.Assistant
-import com.google.home.google.AssistantBroadcast
-import com.google.home.google.AssistantFulfillment
-import com.google.home.google.GoogleCameraDevice
-import com.google.home.google.GoogleDisplayDevice
-import com.google.home.google.GoogleDoorbellDevice
-import com.google.home.google.GoogleTVDevice
-import com.google.home.google.Notification
-import com.google.home.google.PushAvStreamTransport
-import com.google.home.google.Time
-import com.google.home.google.Volume
-import com.google.home.google.WebRtcLiveView
-import com.google.home.matter.standard.BasicInformation
-import com.google.home.matter.standard.BooleanState
-import com.google.home.matter.standard.ColorTemperatureLightDevice
-import com.google.home.matter.standard.ContactSensorDevice
-import com.google.home.matter.standard.DimmableLightDevice
-import com.google.home.matter.standard.ExtendedColorLightDevice
-import com.google.home.matter.standard.GenericSwitchDevice
-import com.google.home.matter.standard.LevelControl
-import com.google.home.matter.standard.OccupancySensing
-import com.google.home.matter.standard.OccupancySensorDevice
-import com.google.home.matter.standard.OnOff
-import com.google.home.matter.standard.OnOffLightDevice
-import com.google.home.matter.standard.OnOffLightSwitchDevice
-import com.google.home.matter.standard.OnOffPluginUnitDevice
-import com.google.home.matter.standard.OnOffSensorDevice
-import com.google.home.matter.standard.RootNodeDevice
-import com.google.home.matter.standard.SpeakerDevice
-import com.google.home.matter.standard.TemperatureControl
-import com.google.home.matter.standard.TemperatureMeasurement
-import com.google.home.matter.standard.Thermostat
-import com.google.home.matter.standard.ThermostatDevice
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 
-class HomeApp(val context: Context, val scope: CoroutineScope, val activity : ComponentActivity) {
+/**
+ * Main application class for interacting with the Google Home APIs.
+ *
+ * @property context The application context.
+ * @property scope The [CoroutineScope] for launching coroutines.
+ * @property activity The [ComponentActivity] for handling activity results.
+ * @property homeClientProvider The provider for obtaining a [HomeClient] instance.
+ */
+class HomeApp(
+    val context: Context,
+    val scope: CoroutineScope,
+    val activity: ComponentActivity,
+    val homeClientProvider: HomeClientProvider
+) {
 
+    /**
+     * The primary object to use all Home APIs.
+     */
     var homeClient: HomeClient
 
+    /**
+     * Manages runtime permissions for the application.
+     */
     val permissionsManager : PermissionsManager
+
+    /**
+     * Manages commissioning of Matter devices.
+     */
     val commissioningManager : CommissioningManager
 
     init {
-        // Registry to record device types and traits used in this app:
-        val registry = FactoryRegistry(
-            types = supportedTypes,
-            traits = supportedTraits
-        )
-
-        // Configuration options for the HomeClient:
-        val config = HomeConfig(
-            coroutineContext = Dispatchers.IO,
-            factoryRegistry = registry
-        )
-
+        Log.i(TAG, "HomeApp init")
         // Initialize the HomeClient, which is the primary object to use all Home APIs:
-        homeClient = HomeClientProvider.getClient(context = context, homeConfig = config)
+        homeClient = homeClientProvider.getClient()
 
         // Initialize supporting classes for Permissions and Commissioning APIs:
+        Log.d(TAG, "create PermissionsManager")
         permissionsManager = PermissionsManager(context, scope, activity, homeClient)
+        Log.d(TAG, "create CommissioningManager")
         commissioningManager = CommissioningManager(context, scope, activity)
     }
 
     companion object {
-        // List of supported device types by this app:
-        val supportedTypes: List<DeviceTypeFactory<out DeviceType>> = listOf(
-            ColorTemperatureLightDevice,
-            ContactSensorDevice,
-            DimmableLightDevice,
-            ExtendedColorLightDevice,
-            GenericSwitchDevice,
-            GoogleCameraDevice,
-            GoogleDisplayDevice,
-            GoogleDoorbellDevice,
-            GoogleTVDevice,
-            OccupancySensorDevice,
-            OnOffLightDevice,
-            OnOffLightSwitchDevice,
-            OnOffPluginUnitDevice,
-            OnOffSensorDevice,
-            RootNodeDevice,
-            SpeakerDevice,
-            ThermostatDevice,
-        )
-
-        // List of supported device traits by this app:
-        val supportedTraits: List<TraitFactory<out Trait>> = listOf(
-            AreaAttendanceState,
-            AreaPresenceState,
-            Assistant,
-            AssistantBroadcast,
-            AssistantFulfillment,
-            BasicInformation,
-            BooleanState,
-            LevelControl,
-            Notification,
-            OccupancySensing,
-            OnOff,
-            PushAvStreamTransport,
-            TemperatureControl,
-            TemperatureMeasurement,
-            Thermostat,
-            Time,
-            Volume,
-            WebRtcLiveView
-        )
+        const val TAG = "HomeApp"
     }
 }

@@ -84,7 +84,7 @@ class ThirdPartyCommissioningService : Service(), CommissioningService.Callback 
                     "Commissioning: App fabric -> ChipClient.commissionDevice(): deviceId [${deviceId}]"
                 )
                 chipClient.awaitCommissionDevice(deviceId, null)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 Log.e(TAG, "onCommissioningRequested() failed")
                 commissioningServiceDelegate
                     .sendCommissioningError(CommissioningError.OTHER)
@@ -94,10 +94,10 @@ class ThirdPartyCommissioningService : Service(), CommissioningService.Callback 
                             "Commissioning: commissioningServiceDelegate.sendCommissioningError() succeeded"
                         )
                     }
-                    .addOnFailureListener { e2 ->
+                    .addOnFailureListener { e ->
                         Log.e(
                             TAG,
-                            "Commissioning: commissioningServiceDelegate.sendCommissioningError() failed, $e2"
+                            "Commissioning: commissioningServiceDelegate.sendCommissioningError() failed, $e"
                         )
                     }
                 return@launch

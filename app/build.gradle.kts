@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -8,15 +10,30 @@ plugins {
 }
 
 android {
-    namespace = "com.example.googlehomeapisampleapp"
-    compileSdk = 35
+  namespace = "com.example.googlehomeapisampleapp"
+  compileSdk = 36
 
-    defaultConfig {
+  defaultConfig {
         applicationId = "com.example.googlehomeapisampleapp"
         minSdk = 29
         targetSdk = 34
-        versionCode = 36
-        versionName = "1.5.1"
+        versionCode = 37
+        versionName = "1.6.0"
+
+        // Store your GCP project web client ID in local.properties and access it via project properties.
+        // If local.properties doesn't exist in your app root folder, just create it
+        // e.g. add this line to your local.properties
+        // WEB_CLIENT_ID_DEV={ProjectNumber}....apps.googleusercontent.com
+        val localProperties = Properties()
+        val localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            localPropertiesFile.inputStream().use { localProperties.load(it) }
+        }
+        val webClientIdDevRaw = localProperties.getProperty("WEB_CLIENT_ID_DEV")
+            ?: project.findProperty("WEB_CLIENT_ID_DEV") as? String
+            ?: "YOUR_DEFAULT_WEB_CLIENT_ID"
+        val webClientIdDev = webClientIdDevRaw.replace("\"", "")
+        buildConfigField("String", "DEFAULT_WEB_CLIENT_ID", "\"$webClientIdDev\"")
     }
     lint {
         disable += "NullSafeMutableLiveData"
@@ -43,6 +60,9 @@ android {
         compose = true
         buildConfig = true
     }
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.14"
+    }
 }
 
 dependencies {
@@ -55,6 +75,7 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation("androidx.compose.material:material-icons-extended:1.7.7")
     implementation(libs.androidx.navigation.compose)
     // Home API SDK dependency:
     implementation("com.google.android.gms:play-services-home:17.1.0")
@@ -63,11 +84,18 @@ dependencies {
     implementation(libs.matter.android.demo.sdk)
 
     // Camera
-    implementation("com.google.dagger:hilt-android:2.57.1")
-    ksp("com.google.dagger:hilt-android-compiler:2.57.1")
-    implementation("androidx.hilt:hilt-navigation-compose:1.3.0-rc01")
-    ksp("androidx.hilt:hilt-compiler:1.3.0-rc01")
-    implementation("io.getstream:stream-webrtc-android:1.3.9")
+    implementation(libs.dagger.hilt.android)
+    implementation(libs.googleid)
+    ksp(libs.hilt.android.compiler)
+    implementation(libs.androidx.hilt.navigation.compose)
+    ksp(libs.androidx.hilt.compiler)
     implementation(libs.stream.webrtc.android)
     implementation(libs.errorprone.annotations)
+
+    // Camera Commissioning
+    implementation(libs.androidx.camerax.core)
+    implementation(libs.androidx.camerax.camera2)
+    implementation(libs.androidx.camerax.lifecycle)
+    implementation(libs.androidx.camerax.view)
+    implementation(libs.mlkit.barcode.scanning)
 }

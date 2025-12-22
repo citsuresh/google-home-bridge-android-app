@@ -19,7 +19,7 @@ class OnOffControllerFactory @Inject internal constructor() {
      * @param device The device to create the controller for.
      * @return The created [OnOffController], or null if the device does not support On/Off.
      */
-    suspend fun create(device: HomeDevice): OnOffController? {
+    fun create(device: HomeDevice): OnOffController? {
         if (device.has(PushAvStreamTransport)) {
             return PushAvStreamTransportOnOffController(device)
         }
@@ -44,6 +44,6 @@ internal suspend fun HomeDevice.pushAvStreamTransport(): PushAvStreamTransport? 
     }
 }
 
-internal suspend fun PushAvStreamTransport.isRecording(): Boolean {
+internal fun PushAvStreamTransport.isRecording(): Boolean {
     return currentConnections?.any { it.transportStatus == TransportStatusEnum.Active } ?: false
 }
