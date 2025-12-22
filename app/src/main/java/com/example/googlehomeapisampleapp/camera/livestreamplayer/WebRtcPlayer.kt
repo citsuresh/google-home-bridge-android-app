@@ -34,8 +34,7 @@ import org.webrtc.VideoTrack
  * @param mediaConstraints The media constraints to use for offer/answer exchange.
  * @param talkbackController Controller for talkback functionality.
  */
-class WebRtcPlayer
-constructor(
+class WebRtcPlayer(
     private val peerConnectionFactory: PeerConnectionFactory,
     private val rtcConfig: PeerConnection.RTCConfiguration,
     private val signalingService: SignalingService,
@@ -66,7 +65,7 @@ constructor(
 
     init {
         peerConnectionEvents =
-            peerConnectionFactory.createPeerConnection(rtcConfig, { peerConnection.value = it })
+            peerConnectionFactory.createPeerConnection(rtcConfig) { peerConnection.value = it }
         _state.value = LiveStreamPlayerState.READY
     }
 

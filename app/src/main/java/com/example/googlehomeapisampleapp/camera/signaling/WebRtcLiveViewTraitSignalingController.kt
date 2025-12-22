@@ -29,8 +29,7 @@ import kotlin.math.max
  * @param device The [HomeDevice] to get the WebRtcLiveView trait from.
  * @param scope The [CoroutineScope] to use for background tasks.
  */
-class WebRtcLiveViewTraitSignalingController
-constructor(private val device: HomeDevice, private val scope: CoroutineScope) : SignalingService {
+class WebRtcLiveViewTraitSignalingController(private val device: HomeDevice, private val scope: CoroutineScope) : SignalingService {
     private var mediaSessionId: String? = null
     private var extensionJob: Job? = null
 
@@ -39,9 +38,7 @@ constructor(private val device: HomeDevice, private val scope: CoroutineScope) :
     ): SignalingService.SendOfferResponse {
         Log.i(TAG, "sendOffer: $sdpOffer")
         val trait = webRtcLiveViewTrait()
-        if (trait == null) {
-            return SignalingService.SendOfferResponse.Error("WebRtcLiveView trait is null")
-        }
+            ?: return SignalingService.SendOfferResponse.Error("WebRtcLiveView trait is null")
         val result = runCatchingCancellable {
             val response = trait.startLiveView(offerSdp = sdpOffer.rawSdp)
             Log.i(TAG, "response: $response")
@@ -75,10 +72,7 @@ constructor(private val device: HomeDevice, private val scope: CoroutineScope) :
                 while (isActive) {
                     delay(delaySeconds * 1000L)
                     Log.d(TAG, "Extending live view session.")
-                    val trait = webRtcLiveViewTrait()
-                    if (trait == null) {
-                        return@launch
-                    }
+                    val trait = webRtcLiveViewTrait() ?: return@launch
                     val result = runCatchingCancellable {
                         val response = trait.extendLiveView(sessionId)
                         delaySeconds = response.liveSessionDurationSeconds.toLong() - EXTENSION_BUFFER_SECONDS
@@ -127,10 +121,7 @@ constructor(private val device: HomeDevice, private val scope: CoroutineScope) :
             Log.e(TAG, "Media session ID is null, cannot configure talkback.")
             return false
         }
-        val trait = webRtcLiveViewTrait()
-        if (trait == null) {
-            return false
-        }
+        val trait = webRtcLiveViewTrait() ?: return false
         // WebRtcLiveView should already send the answer sdp
         val result = runCatchingCancellable {
             if (enabled) {

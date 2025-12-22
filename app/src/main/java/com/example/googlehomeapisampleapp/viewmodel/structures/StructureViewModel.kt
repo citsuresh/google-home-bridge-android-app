@@ -19,7 +19,6 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.googlehomeapisampleapp.viewmodel.automations.AutomationViewModel
-import com.example.googlehomeapisampleapp.viewmodel.automations.CandidateViewModel
 import com.example.googlehomeapisampleapp.viewmodel.devices.DeviceViewModel
 import com.google.home.Structure
 import com.google.home.createRoom
@@ -30,24 +29,16 @@ import kotlinx.coroutines.launch
 
 class StructureViewModel (val structure: Structure) : ViewModel() {
 
-    var id : String
-    var name : String
+    var id : String = structure.id.id
+    var name : String = structure.name
 
-    val roomVMs : MutableStateFlow<List<RoomViewModel>>
-    val deviceVMs : MutableStateFlow<List<DeviceViewModel>>
-    val deviceVMsWithoutRooms : MutableStateFlow<List<DeviceViewModel>>
-    val automationVMs : MutableStateFlow<List<AutomationViewModel>>
+    val roomVMs : MutableStateFlow<List<RoomViewModel>> = MutableStateFlow(mutableListOf())
+    val deviceVMs : MutableStateFlow<List<DeviceViewModel>> = MutableStateFlow(mutableListOf())
+    val deviceVMsWithoutRooms : MutableStateFlow<List<DeviceViewModel>> =
+        MutableStateFlow(mutableListOf())
+    val automationVMs : MutableStateFlow<List<AutomationViewModel>> = MutableStateFlow(mutableListOf())
 
     init {
-        // Initialize permanent values for a structure:
-        id = structure.id.id
-        name = structure.name
-
-        // Initialize dynamic values for a structure:
-        roomVMs = MutableStateFlow(mutableListOf())
-        deviceVMs = MutableStateFlow(mutableListOf())
-        deviceVMsWithoutRooms = MutableStateFlow(mutableListOf())
-        automationVMs = MutableStateFlow(mutableListOf())
 
         // Subscribe to changes on dynamic values:
         viewModelScope.launch { subscribeToRooms() }

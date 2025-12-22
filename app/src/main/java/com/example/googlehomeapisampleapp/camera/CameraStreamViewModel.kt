@@ -29,6 +29,9 @@ import com.example.googlehomeapisampleapp.camera.CameraStreamState.STARTING
 import com.example.googlehomeapisampleapp.camera.CameraStreamState.STOPPING
 import com.example.googlehomeapisampleapp.camera.CameraStreamState.STREAMING_WITHOUT_TALKBACK
 import com.example.googlehomeapisampleapp.camera.CameraStreamState.STREAMING_WITH_TALKBACK
+import com.google.home.google.CameraAvStreamManagement
+import com.example.googlehomeapisampleapp.camera.livestreamplayer.CameraAvStreamManagementController
+import com.example.googlehomeapisampleapp.camera.livestreamplayer.CameraAvStreamManagementControllerFactory
 import com.example.googlehomeapisampleapp.camera.livestreamplayer.LiveStreamPlayer
 import com.example.googlehomeapisampleapp.camera.livestreamplayer.LiveStreamPlayerFactory
 import com.example.googlehomeapisampleapp.camera.livestreamplayer.LiveStreamPlayerState
@@ -37,6 +40,7 @@ import com.example.googlehomeapisampleapp.camera.livestreamplayer.OnOffControlle
 import com.google.home.HomeClient
 import com.google.home.HomeDevice
 import com.google.home.Id
+import com.google.home.google.GoogleCameraDevice
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -56,6 +60,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 /** ViewModel for the camera stream view. */
 @HiltViewModel
@@ -66,8 +71,11 @@ internal constructor(
     private val homeClient: HomeClient,
     private val liveStreamPlayerFactory: LiveStreamPlayerFactory,
     private val onOffControllerFactory: OnOffControllerFactory,
+    // Dependency for Audio Control
+    private val cameraAvStreamManagementControllerFactory: CameraAvStreamManagementControllerFactory,
 ) : ViewModel() {
 
+    private val TAG = "CameraStreamViewModel"
     private val _targetDeviceId = MutableStateFlow<String?>(null)
     private val _microphonePermissionGranted = MutableStateFlow(false)
 
@@ -76,44 +84,54 @@ internal constructor(
         _microphonePermissionGranted.value = microphonePermissionGranted
     }
 
-    /** The surface that is used to render the camera stream. */
     private var surface: Surface? = null
 
     private val _errorMessage = MutableStateFlow<String?>(null)
-    /** An error message to display to the user. */
     val errorMessage: StateFlow<String?> = _errorMessage
 
     private val _liveStreamPlayer = MutableStateFlow<LiveStreamPlayer?>(null)
-    /** The [LiveStreamPlayer] for the camera stream. */
     private val liveStreamPlayer: StateFlow<LiveStreamPlayer?> = _liveStreamPlayer
 
     private val _onOffController = MutableStateFlow<OnOffController?>(null)
-    /** Controller for camera on/off state. */
     private val onOffController: StateFlow<OnOffController?> = _onOffController
 
-    /** Whether the camera is recording. This is the on/off state of the camera. */
-    val isRecording: StateFlow<Boolean> =
+    // Audio Controller Flow
+    private val _cameraAvStreamManagementController = MutableStateFlow<CameraAvStreamManagementController?>(null)
+    private val cameraAvStreamManagementController: StateFlow<CameraAvStreamManagementController?> = _cameraAvStreamManagementController
+
+    @OptIn(ExperimentalCoroutinesApi::class) val isRecording: StateFlow<Boolean> =
         onOffController
             .flatMapLatest { it?.isRecording ?: flowOf(false) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), false)
 
-    /** Whether the camera supports talkback. */
+    // Audio Recording State Flows (Stabilized)
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val isAudioRecording: StateFlow<Boolean> =
+        cameraAvStreamManagementController
+            .flatMapLatest { controller ->
+                // Muted=True means Recording=False. So we invert it.
+                controller?.isRecordingMicrophoneMuted?.map { !it } ?: flowOf(false)
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), false)
+
+    private val _isToggleAudioRecordingInProgress = MutableStateFlow(false)
+    val isToggleAudioRecordingInProgress: StateFlow<Boolean> = _isToggleAudioRecordingInProgress
+
     val supportsTalkback: StateFlow<Boolean> =
         liveStreamPlayer
             .map { it?.supportsTalkback == true }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), false)
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private val isTalkbackEnabled: Flow<Boolean> =
         liveStreamPlayer.flatMapLatest { it?.isTalkbackEnabled ?: flowOf(false) }
+
     private val _isToggleRecordingInProgress = MutableStateFlow(false)
-    /** Whether a toggle recording operation is in progress. */
     val isToggleRecordingInProgress: StateFlow<Boolean> = _isToggleRecordingInProgress
 
     private val _isToggleTalkbackInProgress = MutableStateFlow(false)
-    /** Whether a toggle talkback operation is in progress. */
     val isToggleTalkbackInProgress: StateFlow<Boolean> = _isToggleTalkbackInProgress
 
-    /** Whether the camera stream view is paused when the app is in background. */
     private val isPaused = MutableStateFlow(false)
 
     private val isBackgroundPaused: Flow<Boolean> =
@@ -126,9 +144,10 @@ internal constructor(
             }
             .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    private val _state = MutableStateFlow(CameraStreamState.NOT_STARTED)
+    private val _state = MutableStateFlow(NOT_STARTED)
     val state: StateFlow<CameraStreamState> = _state
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private val livestreamPlayerState: Flow<LiveStreamPlayerState> =
         liveStreamPlayer.flatMapLatest { it?.state ?: flowOf(LiveStreamPlayerState.NOT_STARTED) }
     private var playerJob: Job? = null
@@ -141,16 +160,11 @@ internal constructor(
                 .distinctUntilChanged()
                 .collectLatest { id ->
                     Log.d(TAG, "New targetDeviceId received: $id. Initializing resources.")
-
-                    // Run the device-specific resource initialization
                     val success = setupDeviceResources(id)
                     if (success) {
-                        // If resources are set up, launch the state machine flow
-                        // This nested collector runs as long as the outer collectLatest is active (i.e., until a new ID is emitted or the scope is cancelled).
                         _state
                             .map { state -> handleCameraStreamState(state, id) }
                             .collect { newState ->
-                                // Update the state based on the handler's output
                                 _state.value = newState
                             }
                     }
@@ -158,25 +172,19 @@ internal constructor(
         }
     }
 
-    /**
-     * Centralized resource setup that runs whenever a new unique device ID is set.
-     *
-     * @return true if setup was successful, false otherwise.
-     */
     private suspend fun setupDeviceResources(deviceId: String): Boolean {
-        // Cleanup old resources and reset state before starting setup for a new ID
-        _state.value = CameraStreamState.NOT_STARTED
+        _state.value = NOT_STARTED
         stopPlayer()
         _onOffController.value = null
+        _cameraAvStreamManagementController.value = null
 
         val device = getCameraDevice(deviceId)
         if (device == null) {
             _errorMessage.value = "Device not found for ID: $deviceId"
-            _state.value = CameraStreamState.ERROR
+            _state.value = ERROR
             return false
         }
 
-        // Player setup (Create but don't start yet)
         val player = liveStreamPlayerFactory.createPlayerFromDevice(
             device,
             viewModelScope,
@@ -184,46 +192,44 @@ internal constructor(
         )
         if (player == null) {
             _errorMessage.value = "Failed to create player for device"
-            _state.value = CameraStreamState.ERROR
+            _state.value = ERROR
             return false
         }
         _liveStreamPlayer.value = player
 
-        // Controller setup
         val controller = onOffControllerFactory.create(device)
         if (controller == null) {
             _errorMessage.value = "Failed to create on/off controller for device"
-            _state.value = CameraStreamState.ERROR
+            _state.value = ERROR
             return false
         }
         _onOffController.value = controller
-
-        // Start listening for isRecording changes (once per device setup)
-        // Note: The isRecording flow relies on _onOffController being set.
         viewModelScope.launch { controller.isRecording.collect { handleIsRecordingChange(it) } }
 
-        // Success: Transition to the INITIALIZED state, which triggers the state machine
-        _state.value = CameraStreamState.INITIALIZED
+        // Initialize Audio Controller
+        val audioController = cameraAvStreamManagementControllerFactory.create(device)
+        if (audioController == null) {
+            Log.w(TAG, "Failed to create CameraAvStreamManagementController, audio setting will be unavailable.")
+        }
+        _cameraAvStreamManagementController.value = audioController
+
+        _state.value = INITIALIZED
         return true
     }
 
-    /**
-     * Centralized resource setup that runs whenever a new unique device ID is set.
-     */
     private suspend fun initializeForDevice(deviceId: String) {
-        // Cleanup old resources and reset state before starting setup for a new ID
-        _state.value = CameraStreamState.NOT_STARTED
+        _state.value = NOT_STARTED
         stopPlayer()
         _onOffController.value = null
+        _cameraAvStreamManagementController.value = null
 
         val device = getCameraDevice(deviceId)
         if (device == null) {
             _errorMessage.value = "Device not found for ID: $deviceId"
-            _state.value = CameraStreamState.ERROR
+            _state.value = ERROR
             return
         }
 
-        // 1. Player setup
         val player = liveStreamPlayerFactory.createPlayerFromDevice(
             device,
             viewModelScope,
@@ -231,25 +237,27 @@ internal constructor(
         )
         if (player == null) {
             _errorMessage.value = "Failed to create player for device"
-            _state.value = CameraStreamState.ERROR
+            _state.value = ERROR
             return
         }
         _liveStreamPlayer.value = player
 
-        // 2. Controller setup
         val controller = onOffControllerFactory.create(device)
         if (controller == null) {
             _errorMessage.value = "Failed to create on/off controller for device"
-            _state.value = CameraStreamState.ERROR
+            _state.value = ERROR
             return
         }
         _onOffController.value = controller
-
-        // 3. Start listening for isRecording changes (once per device setup)
         viewModelScope.launch { controller.isRecording.collect { handleIsRecordingChange(it) } }
 
-        // 4. Success: Transition to the INITIALIZED state, which triggers the state machine
-        _state.value = CameraStreamState.INITIALIZED
+        val audioController = cameraAvStreamManagementControllerFactory.create(device)
+        if (audioController == null) {
+            Log.w(TAG, "Failed to create CameraAvStreamManagementController. Audio settings will be unavailable, but not erroring out as video stream is still possible.")
+        }
+        _cameraAvStreamManagementController.value = audioController
+
+        _state.value = INITIALIZED
     }
 
     private suspend fun handleLiveStreamPlayerState(state: LiveStreamPlayerState) {
@@ -258,77 +266,66 @@ internal constructor(
             LiveStreamPlayerState.STREAMING -> {
                 val viewModelState = _state.value
                 val isValidState =
-                    viewModelState == CameraStreamState.STREAMING_WITHOUT_TALKBACK ||
-                            viewModelState == CameraStreamState.STREAMING_WITH_TALKBACK ||
-                            viewModelState == CameraStreamState.STARTING
+                    viewModelState == STREAMING_WITHOUT_TALKBACK ||
+                            viewModelState == STREAMING_WITH_TALKBACK ||
+                            viewModelState == STARTING
                 if (isValidState) {
                     if (isTalkbackEnabled.first()) {
-                        _state.value = CameraStreamState.STREAMING_WITH_TALKBACK
+                        _state.value = STREAMING_WITH_TALKBACK
                     } else {
-                        _state.value = CameraStreamState.STREAMING_WITHOUT_TALKBACK
+                        _state.value = STREAMING_WITHOUT_TALKBACK
                     }
                 }
             }
             LiveStreamPlayerState.DISPOSED -> {
-                if (_state.value != CameraStreamState.ERROR && _state.value != CameraStreamState.STOPPING) {
-                    _state.value = CameraStreamState.STOPPING
+                if (_state.value != ERROR && _state.value != STOPPING) {
+                    _state.value = STOPPING
                 }
             }
             else -> {}
         }
     }
 
-    /**
-     * Handles the camera stream state.
-     *
-     * @param state The camera stream state.
-     * @param deviceId The ID of the currently targeted device.
-     * @return The next camera stream state.
-     */
     private suspend fun handleCameraStreamState(state: CameraStreamState, deviceId: String): CameraStreamState {
         Log.d(TAG, "handleCameraStreamState: $state")
         return when (state) {
-            // Initialize the on/off controller since streaming depends on its output
-            CameraStreamState.NOT_STARTED -> {
+            NOT_STARTED -> {
                 if (!initializeOnOffController(deviceId)) {
-                    CameraStreamState.ERROR
+                    ERROR
                 } else {
-                    CameraStreamState.INITIALIZED
+                    INITIALIZED
                 }
             }
-            CameraStreamState.INITIALIZED -> {
-                // Wait for screen to be in foreground
-                isBackgroundPaused.first({ !it })
+            INITIALIZED -> {
+                isBackgroundPaused.first { !it }
 
                 if (isRecording.first()) {
-                    CameraStreamState.READY_ON
+                    READY_ON
                 } else {
-                    CameraStreamState.READY_OFF
+                    READY_OFF
                 }
             }
-            CameraStreamState.READY_OFF -> {
+            READY_OFF -> {
                 if (isRecording.first()) {
-                    CameraStreamState.READY_ON
+                    READY_ON
                 } else {
-                    CameraStreamState.READY_OFF
+                    READY_OFF
                 }
             }
-            // No players have been created yet at this point
-            CameraStreamState.READY_ON -> {
+            READY_ON -> {
                 if (startPlayer(deviceId)) {
-                    CameraStreamState.STARTING
+                    STARTING
                 } else {
-                    CameraStreamState.ERROR
+                    ERROR
                 }
             }
-            // The livestream player is stopping
-            CameraStreamState.STOPPING -> {
+            STOPPING -> {
                 stopPlayer()
-                CameraStreamState.INITIALIZED
+                INITIALIZED
             }
-            CameraStreamState.ERROR -> {
+            ERROR -> {
                 stopPlayer()
-                CameraStreamState.ERROR
+                ERROR
             }
             else -> {
                 state
@@ -341,32 +338,40 @@ internal constructor(
         val controller = onOffControllerFactory.create(device)
         if (controller == null) {
             _errorMessage.value = "Failed to create on/off controller for device"
-            _state.value = CameraStreamState.ERROR
+            _state.value = ERROR
             return false
         }
-        viewModelScope.launch { isRecording.collect { handleIsRecordingChange(it) } }
         _onOffController.value = controller
+        viewModelScope.launch { isRecording.collect { handleIsRecordingChange(it) } }
+
+        // Initialize Audio Controller
+        val audioController = cameraAvStreamManagementControllerFactory.create(device)
+        if (audioController == null) {
+            Log.w(TAG, "Failed to create CameraAvStreamManagementController, audio setting will be unavailable.")
+        }
+        _cameraAvStreamManagementController.value = audioController
+
         return true
     }
 
     private fun handleIsRecordingChange(isRecording: Boolean) {
         if (isRecording) {
-            if (_state.value == CameraStreamState.READY_OFF) {
-                _state.value = CameraStreamState.READY_ON
+            if (_state.value == READY_OFF) {
+                _state.value = READY_ON
             }
         } else {
             if (
-                _state.value != CameraStreamState.NOT_STARTED &&
-                _state.value != CameraStreamState.ERROR &&
-                _state.value != CameraStreamState.READY_OFF &&
-                _state.value != CameraStreamState.STOPPING
+                _state.value != NOT_STARTED &&
+                _state.value != ERROR &&
+                _state.value != READY_OFF &&
+                _state.value != STOPPING
             ) {
-                _state.value = CameraStreamState.STOPPING
+                _state.value = STOPPING
             }
         }
     }
 
-    private suspend fun startPlayer(deviceId: String): Boolean { // <-- Takes deviceId now
+    private suspend fun startPlayer(deviceId: String): Boolean {
         stopPlayer()
         Log.d(TAG, "startPlayer for ID: $deviceId")
         val device = getCameraDevice(deviceId)
@@ -378,7 +383,7 @@ internal constructor(
         )
         if (player == null) {
             _errorMessage.value = "Failed to create player for device"
-            _state.value = CameraStreamState.ERROR
+            _state.value = ERROR
             return false
         }
         _liveStreamPlayer.value = player
@@ -400,42 +405,34 @@ internal constructor(
         playerJob = null
     }
 
-    private suspend fun backgroundStop() {
+    private fun backgroundStop() {
         if (
-            _state.value == CameraStreamState.READY_ON ||
-            _state.value == CameraStreamState.STARTING ||
-            _state.value == CameraStreamState.STREAMING_WITHOUT_TALKBACK ||
-            _state.value == CameraStreamState.STREAMING_WITH_TALKBACK
+            _state.value == READY_ON ||
+            _state.value == STARTING ||
+            _state.value == STREAMING_WITHOUT_TALKBACK ||
+            _state.value == STREAMING_WITH_TALKBACK
         ) {
             Log.d(TAG, "Background: stopping player")
-            _state.value = CameraStreamState.STOPPING
+            _state.value = STOPPING
         }
     }
 
     override fun onCleared() {
         super.onCleared()
-        // Clean up resources if necessary
         viewModelScope.launch(NonCancellable) { stopPlayer() }
     }
 
-    /** Called on the lifecycle event onPause. */
     fun onPause() {
         isPaused.value = true
-        if (_state.value == CameraStreamState.READY_OFF) {
-            _state.value = CameraStreamState.INITIALIZED
+        if (_state.value == READY_OFF) {
+            _state.value = INITIALIZED
         }
     }
 
-    /** Called when the camera stream view is in foreground. Either rotation or from background. */
     fun onResume() {
         isPaused.value = false
     }
 
-    /**
-     * Called when the surface is created.
-     *
-     * @param surface The surface that was created.
-     */
     fun onSurfaceCreated(surface: Surface) {
         if (this.surface != null) {
             _liveStreamPlayer.value?.detachRenderer()
@@ -444,40 +441,28 @@ internal constructor(
         viewModelScope.launch { _liveStreamPlayer.filterNotNull().first().attachRenderer(surface) }
     }
 
-    /** Called when the surface is destroyed. */
     fun onSurfaceDestroyed() {
         _liveStreamPlayer.value?.detachRenderer()
         this.surface = null
     }
 
-    /**
-     * Get the camera device from the home client.
-     *
-     * @param deviceId The ID of the device to fetch.
-     * @return The camera device, or null if not found.
-     */
     private suspend fun getCameraDevice(deviceId: String): HomeDevice {
         return requireNotNull(homeClient.devices().get(Id(deviceId)))
     }
 
-    /**
-     * Toggle the talkback on or off.
-     *
-     * @param enabled Whether to enable or disable the microphone.
-     */
     fun setTalkback(enabled: Boolean) {
         val player = liveStreamPlayer.value ?: return
         if (
-            _state.value == CameraStreamState.STREAMING_WITHOUT_TALKBACK ||
-            _state.value == CameraStreamState.STREAMING_WITH_TALKBACK
+            _state.value == STREAMING_WITHOUT_TALKBACK ||
+            _state.value == STREAMING_WITH_TALKBACK
         ) {
             viewModelScope.launch {
                 _isToggleTalkbackInProgress.value = true
                 player.toggleTalkback(enabled)
                 if (enabled) {
-                    _state.value = CameraStreamState.STREAMING_WITH_TALKBACK
+                    _state.value = STREAMING_WITH_TALKBACK
                 } else {
-                    _state.value = CameraStreamState.STREAMING_WITHOUT_TALKBACK
+                    _state.value = STREAMING_WITHOUT_TALKBACK
                 }
                 _isToggleTalkbackInProgress.value = false
             }
@@ -485,42 +470,72 @@ internal constructor(
     }
 
     /**
-     * Set recording on or off.
-     *
-     * @param enabled Whether to enable or disable recording.
+     * Set the main camera recording (ON/OFF) state.
+     * This handles video power and streaming state machine transition.
+     * * @param enabled Whether to enable or disable recording.
      */
     fun setRecording(enabled: Boolean) {
-        if (_state.value == CameraStreamState.NOT_STARTED || _state.value == CameraStreamState.ERROR) {
+        if (_state.value == NOT_STARTED || _state.value == ERROR) {
             return
         }
         val onOffController = onOffController.value ?: return
         viewModelScope.launch {
             _isToggleRecordingInProgress.value = true
             withTimeoutOrNull(TOGGLE_RECORDING_WAIT_TIME_MILLISECONDS) {
-                // Player should be started only after the recording is enabled.
+
                 val toggleSuccess = onOffController.setRecording(enabled)
+
                 if (!toggleSuccess) {
                     _errorMessage.value = "Failed to toggle recording"
                 } else if (!enabled) {
-                    // Stop the player optimistically before waiting for the recording state to be
-                    // updated.
+                    // Stop player optimistically to clear video feed
                     stopPlayer()
                 }
-                // Wait for the recording state to be updated to the desired state for UI to reflect the
-                // change.
+                // Wait for the cloud to confirm the recording state change
                 isRecording.first { it == enabled }
             }
             _isToggleRecordingInProgress.value = false
         }
     }
 
-    /** To be called when the error message has been shown to the user. */
+    /**
+     * Set audio recording on or off (microphone for clips).
+     */
+    fun setAudioRecording(enabled: Boolean) {
+        if (_state.value == NOT_STARTED || _state.value == ERROR) return
+        val audioController = cameraAvStreamManagementController.value ?: return
+
+        viewModelScope.launch {
+            _isToggleAudioRecordingInProgress.value = true
+
+            val initialUiState = isAudioRecording.value
+            Log.i(TAG, "Toggle Audio: Initial UI State: $initialUiState, Target: $enabled")
+
+            withTimeoutOrNull(TOGGLE_RECORDING_WAIT_TIME_MILLISECONDS) {
+                // Translate ON=false/OFF=true (Muted)
+                val muteState = !enabled
+                Log.i(TAG, "Audio Command: Sending Muted state: $muteState")
+                val toggleSuccess = audioController.setRecordingMicrophoneMuted(muteState)
+
+                if (!toggleSuccess) {
+                    _errorMessage.value = "Failed to toggle audio recording (API Call Failed)"
+                    Log.e(TAG, "Audio Command: FAILED to send command to controller.")
+                } else {
+                    Log.d(TAG, "Audio Command: SUCCESS. Waiting for state update.")
+                    // Wait for the cloud to confirm the recording state change
+                    isAudioRecording.first { it == enabled }
+                }
+            }
+            _isToggleAudioRecordingInProgress.value = false
+        }
+    }
+
+
     fun errorShown() {
         _errorMessage.value = null
     }
 
     companion object {
-        private const val TAG = "CameraStreamViewModel"
         private const val TOGGLE_RECORDING_WAIT_TIME_MILLISECONDS = 4000L
     }
 }
@@ -541,9 +556,9 @@ internal constructor(
 enum class CameraStreamState {
     NOT_STARTED,
     INITIALIZED,
-    READY_OFF, // Camera is off
-    READY_ON, // Player is ready to be initialized and camera is on
-    STARTING, // Starting the player
+    READY_OFF,
+    READY_ON,
+    STARTING,
     STREAMING_WITHOUT_TALKBACK,
     STREAMING_WITH_TALKBACK,
     STOPPING,

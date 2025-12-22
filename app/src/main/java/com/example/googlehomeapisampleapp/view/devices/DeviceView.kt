@@ -31,7 +31,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -85,12 +91,22 @@ import com.google.home.Trait
 import com.google.home.google.GoogleCameraDevice
 import com.google.home.google.GoogleDoorbellDevice
 import com.google.home.matter.standard.BooleanState
+import com.google.home.matter.standard.DoorLock
+import com.google.home.matter.standard.DoorLockTrait
+import com.google.home.matter.standard.FanControl
+import com.google.home.matter.standard.FanControlTrait
 import com.google.home.matter.standard.LevelControl
 import com.google.home.matter.standard.LevelControlTrait
+import com.google.home.matter.standard.MediaPlayback
+import com.google.home.matter.standard.MediaPlaybackTrait
 import com.google.home.matter.standard.OccupancySensing
 import com.google.home.matter.standard.OnOff
+import com.google.home.matter.standard.SpeakerDevice
+import com.google.home.matter.standard.TemperatureMeasurement
 import com.google.home.matter.standard.Thermostat
 import com.google.home.matter.standard.ThermostatTrait
+import com.google.home.matter.standard.WindowCovering
+import com.google.home.matter.standard.WindowCoveringTrait
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -288,9 +304,12 @@ fun ControlListComponent (homeAppVM: HomeAppViewModel) {
 fun ControlListItem (trait: Trait, type: DeviceType) {
     val scope: CoroutineScope = rememberCoroutineScope()
 
-    val isConnected : Boolean =
+    // Make connectivity reactive by keying off the type changes
+    // When deviceType updates (which happens in subscribeToType), this will recompose
+    val isConnected = remember(type) {
         type.metadata.sourceConnectivity.connectivityState == ConnectivityState.ONLINE ||
                 type.metadata.sourceConnectivity.connectivityState == ConnectivityState.PARTIALLY_ONLINE
+    }
 
     Box (Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
         when (trait) {
@@ -306,7 +325,7 @@ fun ControlListItem (trait: Trait, type: DeviceType) {
                             try {
                                 if (state) trait.on() else trait.off()
                             } catch (e: HomeException) {
-                                MainActivity.showWarning(this, "Toggling device on/off failed")
+                                MainActivity.showWarning(this, "Toggling device on/off failed: ${e.message}")
                             }
                         }
                     },
@@ -315,29 +334,78 @@ fun ControlListItem (trait: Trait, type: DeviceType) {
             }
             is LevelControl -> {
                 val level = trait.currentLevel
-                //Hide LevelControl completely when offline or level unavailable
-                if (isConnected && level != null) {
-                    Text(trait.factory.toString(), fontSize = 20.sp)
-                    LevelSlider(
-                        value = level.toFloat(),
-                        low = 0f, high = 254f, steps = 0,
-                        modifier = Modifier.padding(top = 16.dp),
-                        onValueChangeFinished = { value: Float ->
-                            scope.launch {
-                                try {
-                                    trait.moveToLevelWithOnOff(
-                                        level = value.toInt().toUByte(),
-                                        transitionTime = null,
-                                        optionsMask = LevelControlTrait.OptionsBitmap(),
-                                        optionsOverride = LevelControlTrait.OptionsBitmap()
-                                    )
-                                } catch (e: HomeException) {
-                                    MainActivity.showWarning(this, "Level control command failed")
-                                }
+                if (level != null) {
+                    val isSpeakerDevice = type.factory == SpeakerDevice
+
+                    if (isSpeakerDevice) {
+                        // For speakers, use 0-100 directly
+                        val currentVolumePercent = level.toInt().coerceIn(0, 100)
+
+                        Column {
+                            Spacer(Modifier.height(8.dp))
+                            Text("Volume Control", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(16.dp))
+
+                            Box(Modifier.fillMaxWidth()) {
+                                Text("Volume", fontSize = 16.sp)
+                                Text(
+                                    text = "$currentVolumePercent%",
+                                    fontSize = 16.sp,
+                                    modifier = Modifier.align(Alignment.CenterEnd)
+                                )
                             }
-                        },
-                        isEnabled = isConnected
-                    )
+
+                            LevelSlider(
+                                value = currentVolumePercent.toFloat(),
+                                low = 0f,
+                                high = 100f,
+                                steps = 0,
+                                modifier = Modifier.padding(top = 8.dp),
+                                onValueChange = { newValue ->
+                                    // Validate that value is in range
+                                    newValue in 0f..100f
+                                },
+                                onValueChangeFinished = { volumePercent ->
+                                    scope.launch {
+                                        try {
+                                            trait.moveToLevelWithOnOff(
+                                                level = volumePercent.toInt().toUByte(),
+                                                transitionTime = null,
+                                                optionsMask = LevelControlTrait.OptionsBitmap(),
+                                                optionsOverride = LevelControlTrait.OptionsBitmap()
+                                            )
+                                        } catch (e: HomeException) {
+                                            MainActivity.showWarning(this, "Volume control failed: ${e.message}")
+                                        }
+                                    }
+                                },
+                                isEnabled = isConnected
+                            )
+                        }
+                    } else {
+                        // For other devices (lights), use 0-254 scale
+                        Text(trait.factory.toString(), fontSize = 20.sp)
+                        LevelSlider(
+                            value = level.toFloat(),
+                            low = 0f, high = 254f, steps = 0,
+                            modifier = Modifier.padding(top = 16.dp),
+                            onValueChangeFinished = { value: Float ->
+                                scope.launch {
+                                    try {
+                                        trait.moveToLevelWithOnOff(
+                                            level = value.toInt().toUByte(),
+                                            transitionTime = null,
+                                            optionsMask = LevelControlTrait.OptionsBitmap(),
+                                            optionsOverride = LevelControlTrait.OptionsBitmap()
+                                        )
+                                    } catch (e: HomeException) {
+                                        MainActivity.showWarning(this, "Level control command failed: ${e.message}")
+                                    }
+                                }
+                            },
+                            isEnabled = isConnected
+                        )
+                    }
                 }
             }
             is BooleanState -> {
@@ -359,11 +427,548 @@ fun ControlListItem (trait: Trait, type: DeviceType) {
                     scope = scope
                 )
             }
+            is DoorLock -> {
+                val lockState: DoorLockTrait.DlLockState? = trait.lockState
+                val isLocked: Boolean = lockState == DoorLockTrait.DlLockState.Locked
+                val requiresPin: Boolean? = trait.requirePinforRemoteOperation
+
+                var showPinDialog by remember { mutableStateOf(false) }
+                var pinInput by remember { mutableStateOf("") }
+                var isUnlocking by remember { mutableStateOf(false) }
+                var isProcessing by remember { mutableStateOf(false) }
+
+                Column(Modifier.fillMaxWidth()) {
+                    Text("Door lock", fontSize = 20.sp)
+                    Text(if (isLocked) "Locked" else "Unlocked", fontSize = 16.sp)
+                }
+
+                // PIN dialog
+                if (showPinDialog) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            if (!isProcessing) {
+                                showPinDialog = false
+                                pinInput = ""
+                            }
+                        },
+                        title = { Text(if (isUnlocking) "Enter PIN to Unlock" else "Enter PIN to Lock") },
+                        text = {
+                            OutlinedTextField(
+                                value = pinInput,
+                                onValueChange = {
+                                    if (it.all { c -> c.isDigit() } && it.length <= 8)
+                                        pinInput = it
+                                },
+                                label = { Text("PIN (4-8 digits)") },
+                                singleLine = true,
+                                enabled = !isProcessing
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    isProcessing = true
+                                    scope.launch {
+                                        try {
+                                            val pin = pinInput.toByteArray()
+                                            if (isUnlocking) {
+                                                trait.unlockDoor { pinCode = pin }
+                                            } else {
+                                                trait.lockDoor { pinCode = pin }
+                                            }
+                                            showPinDialog = false
+                                            pinInput = ""
+                                        } catch (e: HomeException) {
+                                            MainActivity.showWarning(this, "Wrong PIN or operation failed: ${e.message}")
+                                        } finally {
+                                            isProcessing = false
+                                        }
+                                    }
+                                },
+                                enabled = pinInput.length >= 4 && !isProcessing
+                            ) {
+                                Text("OK")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    showPinDialog = false
+                                    pinInput = ""
+                                },
+                                enabled = !isProcessing
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
+
+                Switch(
+                    checked = isLocked,
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                    onCheckedChange = { shouldLock ->
+                        if (requiresPin == true) {
+                            // Device requires PIN - show dialog immediately
+                            isUnlocking = !shouldLock
+                            showPinDialog = true
+                        } else {
+                            // Device doesn't require PIN (or unknown) - attempt operation directly
+                            isProcessing = true
+                            scope.launch {
+                                try {
+                                    if (shouldLock) {
+                                        trait.lockDoor()
+                                    } else {
+                                        trait.unlockDoor()
+                                    }
+                                } catch (e: HomeException) {
+                                    // If operation fails due to credential requirement, show PIN dialog
+                                    val needsCredential = e.message?.contains("19") == true ||
+                                            e.message?.contains("credential", ignoreCase = true) == true ||
+                                            e.message?.contains("authentication", ignoreCase = true) == true
+
+                                    if (needsCredential) {
+                                        isUnlocking = !shouldLock
+                                        showPinDialog = true
+                                    } else {
+                                        MainActivity.showWarning(this, "Operation failed: ${e.message}")
+                                    }
+                                } finally {
+                                    isProcessing = false
+                                }
+                            }
+                        }
+                    },
+                    enabled = isConnected && !isProcessing
+                )
+            }
+            is FanControl -> {
+                FanControlComponent(
+                    trait = trait,
+                    isConnected = isConnected
+                )
+            }
+            is MediaPlayback -> {
+                MediaPlaybackControlComponent(
+                    trait = trait,
+                    isConnected = isConnected
+                )
+            }
+            is WindowCovering -> {
+                WindowCoveringControlComponent(
+                    trait = trait,
+                    isConnected = isConnected
+                )
+            }
+            is TemperatureMeasurement -> {
+                Column(Modifier.fillMaxWidth()) {
+                    Text("Temperature", fontSize = 20.sp)
+                    val measuredValue = trait.measuredValue
+                    val tempText = if (measuredValue != null) {
+                        "%.1f°C".format(measuredValue / 100.0)
+                    } else {
+                        "--"
+                    }
+                    Text(tempText, fontSize = 16.sp)
+                }
+            }
             else -> return
         }
     }
 }
+@Composable
+fun FanControlComponent(
+    trait: FanControl,
+    isConnected: Boolean
+) {
+    val scope = rememberCoroutineScope()
+    val fanMode = trait.fanMode ?: FanControlTrait.FanModeEnum.Off
+    var sliderPosition by remember(fanMode) {
+        mutableFloatStateOf(
+            when (fanMode) {
+                FanControlTrait.FanModeEnum.Off -> 0f
+                FanControlTrait.FanModeEnum.Low -> 25f
+                FanControlTrait.FanModeEnum.Medium -> 50f
+                FanControlTrait.FanModeEnum.High -> 75f
+                else -> 0f
+            }
+        )
+    }
 
+    fun percentageToFanMode(percentage: Float): FanControlTrait.FanModeEnum {
+        return when {
+            percentage == 0f -> FanControlTrait.FanModeEnum.Off
+            percentage <= 33f -> FanControlTrait.FanModeEnum.Low
+            percentage <= 66f -> FanControlTrait.FanModeEnum.Medium
+            else -> FanControlTrait.FanModeEnum.High
+        }
+    }
+
+    Column {
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.fillMaxWidth()) {
+            Text("Fan Mode", fontSize = 16.sp)
+
+            var expanded by remember { mutableStateOf(false) }
+            Box(modifier = Modifier.align(Alignment.CenterEnd)) {
+                TextButton(
+                    onClick = { if (isConnected) expanded = true },
+                    enabled = isConnected
+                ) {
+                    Text(
+                        text = when (fanMode) {
+                            FanControlTrait.FanModeEnum.Off -> "Off"
+                            FanControlTrait.FanModeEnum.Low -> "Low"
+                            FanControlTrait.FanModeEnum.Medium -> "Medium"
+                            FanControlTrait.FanModeEnum.High -> "High"
+                            else -> "Unknown"
+                        },
+                        color = if (isConnected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        }
+                    )
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = null
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    listOf(
+                        FanControlTrait.FanModeEnum.Off to "Off",
+                        FanControlTrait.FanModeEnum.Low to "Low",
+                        FanControlTrait.FanModeEnum.Medium to "Medium",
+                        FanControlTrait.FanModeEnum.High to "High"
+                    ).forEach { (mode, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                expanded = false
+                                scope.launch {
+                                    try {
+                                        trait.update { setFanMode(mode) }
+                                        // Update slider to designated position when mode selected from dropdown
+                                        sliderPosition = when (mode) {
+                                            FanControlTrait.FanModeEnum.Off -> 0f
+                                            FanControlTrait.FanModeEnum.Low -> 25f
+                                            FanControlTrait.FanModeEnum.Medium -> 50f
+                                            FanControlTrait.FanModeEnum.High -> 75f
+                                            else -> 0f
+                                        }
+                                    } catch (e: Exception) {
+                                        MainActivity.showWarning(scope, "Failed to set fan mode: ${e.message}")
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Box(Modifier.fillMaxWidth()) {
+            Text("Fan Speed", fontSize = 16.sp)
+            Text(
+                text = "${sliderPosition.toInt()}%",
+                fontSize = 16.sp,
+                modifier = Modifier.align(Alignment.CenterEnd)
+            )
+        }
+
+        LevelSlider(
+            value = sliderPosition,
+            low = 0f,
+            high = 100f,
+            steps = 0,
+            modifier = Modifier.padding(top = 8.dp),
+            onValueChange = { value ->
+                sliderPosition = value
+                true
+            },
+            onValueChangeFinished = { value ->
+                scope.launch {
+                    try {
+                        val newMode = percentageToFanMode(value)
+                        trait.update { setFanMode(newMode) }
+                    } catch (e: Exception) {
+                        MainActivity.showWarning(scope, "Failed to set fan speed: ${e.message}")
+                    }
+                }
+            },
+            isEnabled = isConnected
+        )
+    }
+}
+@Composable
+fun MediaPlaybackControlComponent(
+    trait: MediaPlayback,
+    isConnected: Boolean
+) {
+    val scope = rememberCoroutineScope()
+    val currentState = trait.currentState
+
+    Column {
+        Spacer(Modifier.height(8.dp))
+
+        Box(Modifier.fillMaxWidth()) {
+            Text("Playback", fontSize = 16.sp)
+            Text(
+                text = currentState?.name ?: "Unknown",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.align(Alignment.CenterEnd)
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            IconButton(
+                onClick = {
+                    scope.launch {
+                        try {
+                            if (currentState != null && currentState == MediaPlaybackTrait.PlaybackStateEnum.Playing) {
+                                trait.pause()
+                            } else {
+                                trait.play()
+                            }
+                        } catch (e: Exception) {
+                            MainActivity.showWarning(scope, "Playback control failed: ${e.message}")
+                        }
+                    }
+                },
+                enabled = isConnected
+            ) {
+                Icon(
+                    imageVector = if (currentState == MediaPlaybackTrait.PlaybackStateEnum.Playing) {
+                        Icons.Default.Pause
+                    } else {
+                        Icons.Default.PlayArrow
+                    },
+                    contentDescription = if (currentState == MediaPlaybackTrait.PlaybackStateEnum.Playing) {
+                        "Pause"
+                    } else {
+                        "Play"
+                    },
+                    tint = if (isConnected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    }
+                )
+            }
+
+            IconButton(
+                onClick = {
+                    scope.launch {
+                        try {
+                            trait.stop()
+                        } catch (e: Exception) {
+                            MainActivity.showWarning(scope, "Stop failed: ${e.message}")
+                        }
+                    }
+                },
+                enabled = isConnected
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Stop,
+                    contentDescription = "Stop",
+                    tint = if (isConnected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    }
+                )
+            }
+
+            IconButton(
+                onClick = {
+                    scope.launch {
+                        try {
+                            trait.next()
+                        } catch (e: Exception) {
+                            MainActivity.showWarning(scope, "Next failed: ${e.message}")
+                        }
+                    }
+                },
+                enabled = isConnected
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SkipNext,
+                    contentDescription = "Next",
+                    tint = if (isConnected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    }
+                )
+            }
+        }
+    }
+}
+@Composable
+fun WindowCoveringControlComponent(
+    trait: WindowCovering,
+    isConnected: Boolean
+) {
+    val scope = rememberCoroutineScope()
+    val targetLiftPercent100ths = trait.targetPositionLiftPercent100ths ?: 0u
+    val targetTiltPercent100ths = trait.targetPositionTiltPercent100ths ?: 0u
+    val targetLiftPercentage = remember(targetLiftPercent100ths) {
+        100f - (targetLiftPercent100ths.toInt() / 100).toFloat()
+    }
+    val targetTiltDegrees = remember(targetTiltPercent100ths) {
+        (targetTiltPercent100ths.toInt() / 10000f) * 180f
+    }
+    var displayLiftPercentage by remember { mutableFloatStateOf(targetLiftPercentage) }
+    var displayTiltDegrees by remember { mutableFloatStateOf(targetTiltDegrees) }
+
+    LaunchedEffect(targetLiftPercentage) {
+        displayLiftPercentage = targetLiftPercentage
+    }
+
+    LaunchedEffect(targetTiltDegrees) {
+        displayTiltDegrees = targetTiltDegrees
+    }
+    val isOpen = remember(displayLiftPercentage) {
+        displayLiftPercentage > 0f
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Spacer(Modifier.height(8.dp))
+
+        // Open/Close Toggle
+        Box(Modifier.fillMaxWidth()) {
+            Text(
+                text = "Position",
+                fontSize = 16.sp
+            )
+
+            Row(
+                modifier = Modifier.align(Alignment.CenterEnd),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = if (isOpen) "Open" else "Closed",
+                    fontSize = 16.sp
+                )
+                Switch(
+                    checked = isOpen,
+                    onCheckedChange = { shouldOpen ->
+                        scope.launch {
+                            try {
+                                if (shouldOpen) {
+                                    // Open to 99%
+                                    val percent100ths = 100.toUShort()
+                                    trait.goToLiftPercentage(percent100ths)
+                                    displayLiftPercentage = 99f
+                                } else {
+                                    // Close to 0%
+                                    trait.downOrClose()
+                                    displayLiftPercentage = 0f
+                                }
+                            } catch (e: Exception) {
+                                MainActivity.showWarning(scope, "Operation failed: ${e.message}")
+                            }
+                        }
+                    },
+                    enabled = isConnected
+                )
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        // Lift position display and slider
+        Box(Modifier.fillMaxWidth()) {
+            Text(
+                text = "Lift Position",
+                fontSize = 16.sp
+            )
+            Text(
+                text = "${displayLiftPercentage.toInt()}%",
+                fontSize = 16.sp,
+                modifier = Modifier.align(Alignment.CenterEnd)
+            )
+        }
+
+        LevelSlider(
+            value = displayLiftPercentage,
+            low = 0f,
+            high = 100f,
+            steps = 0,
+            modifier = Modifier.padding(top = 8.dp),
+            onValueChange = { value ->
+                displayLiftPercentage = value
+                true
+            },
+            onValueChangeFinished = { value ->
+                scope.launch {
+                    try {
+                        val invertedPercent = 100f - value
+                        val percent100ths = (invertedPercent.toInt() * 100).toUShort()
+                        trait.goToLiftPercentage(percent100ths)
+                    } catch (e: Exception) {
+                        MainActivity.showWarning(scope, "Lift position change failed: ${e.message}")
+                    }
+                }
+            },
+            isEnabled = isConnected
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        // Tilt position control (if supported)
+        if (trait.targetPositionTiltPercent100ths != null) {
+            Box(Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Tilt Angle",
+                    fontSize = 16.sp
+                )
+                Text(
+                    text = "${displayTiltDegrees.toInt()}°",
+                    fontSize = 16.sp,
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                )
+            }
+
+            LevelSlider(
+                value = displayTiltDegrees,
+                low = 0f,
+                high = 180f,
+                steps = 0,
+                modifier = Modifier.padding(top = 8.dp),
+                onValueChange = { value ->
+                    displayTiltDegrees = value
+                    true
+                },
+                onValueChangeFinished = { value ->
+                    scope.launch {
+                        try {
+                            val percent100ths = ((value / 180f) * 10000f).toInt().toUShort()
+                            trait.goToTiltPercentage(percent100ths)
+                        } catch (e: Exception) {
+                            MainActivity.showWarning(scope, "Tilt position change failed: ${e.message}")
+                        }
+                    }
+                },
+                isEnabled = isConnected
+            )
+        }
+    }
+}
 /**
  * Thermostat control for the Thermostat trait, with heat, cool, auto support, both
  * relative and absolute.

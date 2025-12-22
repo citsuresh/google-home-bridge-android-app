@@ -1,4 +1,3 @@
-
 /* Copyright 2025 Google LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +16,7 @@ limitations under the License.
 package com.example.googlehomeapisampleapp
 
 import android.content.Context
+import android.util.Log
 import androidx.activity.ComponentActivity
 import com.google.home.HomeClient
 import com.google.home.HomeException
@@ -25,16 +25,23 @@ import com.google.home.PermissionsResultStatus
 import com.google.home.PermissionsState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 class PermissionsManager(val context: Context, val scope: CoroutineScope, val activity: ComponentActivity, val client: HomeClient) {
 
-    var isSignedIn: MutableStateFlow<Boolean>
+    companion object {
+      const val TAG = "PermissionsManager"
+    }
+
+    var isSignedIn: MutableStateFlow<Boolean> = MutableStateFlow(false)
+    private val _isPermissionUpdated = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val permissionUpdatedEvent = _isPermissionUpdated.asSharedFlow()
+    var isInitialized: MutableStateFlow<Boolean> = MutableStateFlow(false)
 
     init {
-        // StateFlow to carry the result for successful sign-in:
-        isSignedIn = MutableStateFlow(false)
         // Register permission caller callback on HomeClient:
         client.registerActivityResultCallerForPermissions(activity)
         // Check the current permission state:
@@ -43,14 +50,24 @@ class PermissionsManager(val context: Context, val scope: CoroutineScope, val ac
 
     private fun checkPermissions() {
         scope.launch {
-            // Check and wait until getting the first permission state after initialization:
-            val permissionsState: PermissionsState = client.hasPermissions().first { state ->
-                state != PermissionsState.PERMISSIONS_STATE_UNINITIALIZED
+            // Block here to subscribe permission state changes
+            client.hasPermissions().collectLatest { state ->
+                if (state == PermissionsState.PERMISSIONS_STATE_UNINITIALIZED) {
+                    return@collectLatest
+                }
+                // Report the permission state:
+                reportPermissionState(state)
+                // Adjust the sign-in status according to permission state:
+                val isPermissionStateGranted = state == PermissionsState.GRANTED
+                // Emit the Sign-In state
+                isSignedIn.emit(isPermissionStateGranted)
+                // Emit every Permission Updated event
+                _isPermissionUpdated.emit(Unit)
+                Log.d(TAG, "Emit new isSignedIn=${isSignedIn.value}, state=$state")
+                // Set to true when initialization
+                if (!isInitialized.value)
+                    isInitialized.emit(true)
             }
-            // Adjust the sign-in status according to permission state:
-            isSignedIn.emit(permissionsState == PermissionsState.GRANTED)
-            // Report the permission state:
-            reportPermissionState(permissionsState)
         }
     }
 
@@ -66,14 +83,22 @@ class PermissionsManager(val context: Context, val scope: CoroutineScope, val ac
         checkPermissions()
     }
 
-    fun requestPermissions() {
+    fun requestPermissions(isForceRefresh: Boolean = false) {
         scope.launch {
             try {
                 // Request permissions from the Permissions API and record the result:
                 val result: PermissionsResult = client.requestPermissions(forceLaunch = true)
                 // Adjust the sign-in status according to permission result:
-                if (result.status == PermissionsResultStatus.SUCCESS)
-                    isSignedIn.emit(true)
+                if (result.status == PermissionsResultStatus.SUCCESS) {
+                    Log.d(TAG, "PermissionsResultStatus.SUCCESS")
+                }
+                if (isForceRefresh) {
+                    // When user request permission to change structure, the permission
+                    // state won't change. So it is required to force emit a permission update event.
+                    Log.i(TAG, "forceRefresh after requestPermissions")
+                    _isPermissionUpdated.emit(Unit)
+
+                }
                 // Report the permission result:
                 reportPermissionResult(result)
             }
@@ -93,7 +118,6 @@ class PermissionsManager(val context: Context, val scope: CoroutineScope, val ac
                 MainActivity.showWarning(this, message)
             PermissionsState.PERMISSIONS_STATE_UNINITIALIZED ->
                 MainActivity.showError(this, message)
-            else -> MainActivity.showError(this, message)
         }
     }
 
@@ -110,9 +134,7 @@ class PermissionsManager(val context: Context, val scope: CoroutineScope, val ac
                 MainActivity.showWarning(this, message)
             PermissionsResultStatus.ERROR ->
                 MainActivity.showError(this, message)
-            else -> MainActivity.showError(this, message)
         }
     }
 
 }
-

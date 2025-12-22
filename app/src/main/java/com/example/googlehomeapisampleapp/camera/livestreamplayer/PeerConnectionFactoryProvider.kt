@@ -16,7 +16,7 @@ import javax.inject.Singleton
 class PeerConnectionFactoryProvider
 @Inject
 internal constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
     private val eglBase = EglBase.create()
 

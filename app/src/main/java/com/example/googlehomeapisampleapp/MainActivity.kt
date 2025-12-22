@@ -1,4 +1,3 @@
-
 /* Copyright 2025 Google LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,35 +25,100 @@ import androidx.lifecycle.lifecycleScope
 import com.example.googlehomeapisampleapp.view.HomeAppView
 import com.example.googlehomeapisampleapp.viewmodel.HomeAppViewModel
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
+/**
+ * The main activity of the Google Home API Sample App.
+ * This activity is responsible for initializing the [HomeApp] and displaying the [HomeAppView].
+ */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    private lateinit var homeApp: HomeApp
-    private lateinit var homeAppVM : HomeAppViewModel
+    @Inject
+    lateinit var homeClientProvider: HomeClientProvider
+    lateinit var homeAppVM: HomeAppViewModel
 
+    /**
+     * Called when the activity is first created.
+     *
+     * @param savedInstanceState If the activity is being re-initialized after
+     *     previously being shut down then this Bundle contains the data it most
+     *     recently supplied in [onSaveInstanceState]. Otherwise it is null.
+     */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.d(TAG, "onCreate of MainActivity instance of MainActivity ${this@MainActivity}")
         // Initialize logger for logging and displaying messages:
         logger = Logger(this)
 
         // Initialize the main app class to interact with the APIs:
-        homeApp = HomeApp(baseContext, lifecycleScope, this)
-        // Initialize the viewmodel representing the main app:
+        val homeApp = HomeApp(baseContext, lifecycleScope, this, homeClientProvider)
+        Log.d(TAG, "homeApp created")
         homeAppVM = HomeAppViewModel(homeApp)
+        Log.d(TAG, "homeAppVM created")
 
         // Call to make the app allocate the entire screen:
         enableEdgeToEdge()
         // Set the content of the screen to display the app:
         setContent { HomeAppView(homeAppVM) }
+
+        // Receive the intent extra data to see if it is from AccountSwitchActivity.kt
+        val isFromAccountSwitch = intent.getBooleanExtra(EXTRA_FROM_ACCOUNT_SWITCH, false)
+        Log.i(TAG, "Launched from account switch: $isFromAccountSwitch")
+
+
+        if (savedInstanceState != null)
+            return
+        // Activity is fresh and newly created
+        if (isFromAccountSwitch) {
+            // After new account signed-in, it still needs to request the permission.
+            // When switching to an account gotten permissions before, it needs to wait
+            // until the permissions are fully loaded.
+            lifecycleScope.launch {
+                // Block here until permissionManager is initialized
+                homeApp.permissionsManager.isInitialized.first { it }
+                if (!homeApp.permissionsManager.isSignedIn.value) {
+                    // Try to request the permission
+                    Log.d(TAG, "Permissions not granted, requesting permissions")
+                    homeApp.permissionsManager.requestPermissions()
+                }
+            }
+        }
     }
 
     companion object {
+        const val TAG = "MainActivity"
+        const val EXTRA_FROM_ACCOUNT_SWITCH = "fromAccountSwitch"
         private lateinit var logger: Logger
-        // Exposed utility functions for logging and displaying messages:
+        /**
+         * Shows an error message to the user and logs it.
+         *
+         * @param caller The object calling this function.
+         * @param message The error message to display.
+         */
         fun showError(caller: Any, message: String) { logger.log(caller, message, Logger.LogLevel.ERROR) }
+        /**
+         * Shows a warning message to the user and logs it.
+         *
+         * @param caller The object calling this function.
+         * @param message The warning message to display.
+         */
         fun showWarning(caller: Any, message: String) { logger.log(caller, message, Logger.LogLevel.WARNING) }
+        /**
+         * Shows an info message to the user and logs it.
+         *
+         * @param caller The object calling this function.
+         * @param message The info message to display.
+         */
         fun showInfo(caller: Any, message: String) { logger.log(caller, message, Logger.LogLevel.INFO) }
+        /**
+         * Logs a debug message.
+         *
+         * @param caller The object calling this function.
+         * @param message The debug message to log.
+         */
         fun showDebug(caller: Any, message: String) { logger.log(caller, message, Logger.LogLevel.DEBUG) }
     }
 }

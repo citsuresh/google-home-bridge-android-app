@@ -99,6 +99,7 @@ fun HubDiscoveryView(
             discoveryCode = code,
             runtimeState = null,
             port = port,
+            mdnsHostName = null,
         )
     }
 

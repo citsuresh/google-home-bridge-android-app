@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -68,6 +69,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun AutomationsAccountButton (homeAppVM: HomeAppViewModel) {
+    val context = LocalContext.current
     var expanded by remember { mutableStateOf(false) }
     /**
      * UI Row containing:
@@ -80,7 +82,7 @@ fun AutomationsAccountButton (homeAppVM: HomeAppViewModel) {
      */
     Row {
         IconButton(
-            onClick = { homeAppVM.homeApp.permissionsManager.requestPermissions() },
+            onClick = { homeAppVM.homeApp.permissionsManager.requestPermissions(true) },
             modifier = Modifier.size(48.dp).background(Color.Transparent)
         ) {
             Icon(
@@ -110,6 +112,10 @@ fun AutomationsAccountButton (homeAppVM: HomeAppViewModel) {
                     homeAppVM.homeApp.context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }
             )
+            DropdownMenuItem(
+                text = { Text("Google Sign-In") },
+                onClick = { homeAppVM.signInWithGoogleAccount(context) },
+            )
         }
     }
 }
@@ -133,7 +139,7 @@ fun AutomationsView (homeAppVM: HomeAppViewModel) {
 
                     if (structureVMs.size > 1) {
                         TextButton(onClick = { expanded = true }) {
-                            Text(text = structureName + " ▾", fontSize = 32.sp)
+                          Text(text = "$structureName ▾", fontSize = 32.sp)
                         }
                     } else {
                         TextButton(onClick = { expanded = true }) {

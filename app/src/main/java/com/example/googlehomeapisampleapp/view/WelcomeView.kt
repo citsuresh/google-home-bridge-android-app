@@ -29,6 +29,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -39,7 +40,10 @@ import com.example.googlehomeapisampleapp.viewmodel.HomeAppViewModel
 
 @Composable
 fun WelcomeView (homeAppVM: HomeAppViewModel) {
-    Column (modifier = Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center) {
+    val context = LocalContext.current
+    Column (modifier = Modifier
+      .fillMaxSize()
+      .padding(32.dp), verticalArrangement = Arrangement.Center) {
 
         Row (Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
             Text(stringResource(R.string.welcome_text_1), fontSize = 32.sp)
@@ -75,10 +79,28 @@ fun WelcomeView (homeAppVM: HomeAppViewModel) {
         Spacer(Modifier.height(32.dp))
 
         Row (Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            // Sign-in button to trigger Permissions API and start the sign-in flow:
-            Button(onClick = { homeAppVM.homeApp.permissionsManager.requestPermissions() }) {
-                Text(stringResource(R.string.app_name))
+            // Request Permission:
+            //  - Trigger Permissions API and start the sign-in flow:
+            //  - If a user is already signed in, this will just request permissions.
+            //  - If not, this will trigger the account selection flow.
+            Button(onClick = {
+                homeAppVM.homeApp.permissionsManager.requestPermissions()
+            }) {
+                Text("Request Permission")
             }
+        }
+        Row (Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+          // Google Sign-In:
+          //  - Trigger Google Sign-In flow using Credential Manager.
+          //  - This will allow the user to select a Google account.
+          //  - Upon successful account selection, the HomeClient will be updated with the new account.
+          //  - A proxy activity will be launched as the transition to recreate MainActivity
+          //  - After MainActivity is created, it needs to request the permission for the new account
+          Button(onClick = {
+            homeAppVM.signInWithGoogleAccount(context)
+          }) {
+            Text("Google Sign-In")
+          }
         }
     }
 }

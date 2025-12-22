@@ -1,6 +1,20 @@
+/* Copyright 2025 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package com.example.googlehomeapisampleapp
 
-import android.content.Context
 import com.google.home.DeviceType
 import com.google.home.DeviceTypeFactory
 import com.google.home.FactoryRegistry
@@ -13,19 +27,36 @@ import com.google.home.google.AreaPresenceState
 import com.google.home.google.Assistant
 import com.google.home.google.AssistantBroadcast
 import com.google.home.google.AssistantFulfillment
+import com.google.home.google.ExtendedApplicationLauncher
+import com.google.home.google.ExtendedLevelControl
+import com.google.home.google.ExtendedMediaInput
+import com.google.home.google.ExtendedMediaPlayback
+import com.google.home.google.GoogleCameraDevice
 import com.google.home.google.GoogleDisplayDevice
+import com.google.home.google.GoogleDoorbellDevice
 import com.google.home.google.GoogleTVDevice
+import com.google.home.google.MediaActivityState
 import com.google.home.google.Notification
+import com.google.home.google.PushAvStreamTransport
 import com.google.home.google.Time
+import com.google.home.google.VoiceStarter
 import com.google.home.google.Volume
+import com.google.home.google.WebRtcLiveView
+import com.google.home.matter.standard.AudioOutput
 import com.google.home.matter.standard.BasicInformation
 import com.google.home.matter.standard.BooleanState
 import com.google.home.matter.standard.ColorTemperatureLightDevice
 import com.google.home.matter.standard.ContactSensorDevice
 import com.google.home.matter.standard.DimmableLightDevice
+import com.google.home.matter.standard.DoorLock
+import com.google.home.matter.standard.DoorLockDevice
 import com.google.home.matter.standard.ExtendedColorLightDevice
+import com.google.home.matter.standard.FanControl
+import com.google.home.matter.standard.FanDevice
 import com.google.home.matter.standard.GenericSwitchDevice
 import com.google.home.matter.standard.LevelControl
+import com.google.home.matter.standard.MediaInput
+import com.google.home.matter.standard.MediaPlayback
 import com.google.home.matter.standard.OccupancySensing
 import com.google.home.matter.standard.OccupancySensorDevice
 import com.google.home.matter.standard.OnOff
@@ -37,64 +68,98 @@ import com.google.home.matter.standard.RootNodeDevice
 import com.google.home.matter.standard.SpeakerDevice
 import com.google.home.matter.standard.TemperatureControl
 import com.google.home.matter.standard.TemperatureMeasurement
+import com.google.home.matter.standard.TemperatureSensorDevice
 import com.google.home.matter.standard.Thermostat
 import com.google.home.matter.standard.ThermostatDevice
+import com.google.home.matter.standard.WindowCovering
+import com.google.home.matter.standard.WindowCoveringDevice
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
-import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import kotlinx.coroutines.Dispatchers
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
 
+/**
+ * Hilt module for providing dependencies related to the Google Home APIs.
+ */
 @Module
 @InstallIn(SingletonComponent::class)
 object HomeModule {
 
-    // 1. Provide supported device types (with @JvmSuppressWildcards)
+    /**
+     * Provides a list of supported device types.
+     */
     @Provides
     @Singleton
     fun provideSupportedDeviceTypes(): @JvmSuppressWildcards List<DeviceTypeFactory<out DeviceType>> = listOf(
-        ContactSensorDevice,
-        ColorTemperatureLightDevice,
-        DimmableLightDevice,
-        ExtendedColorLightDevice,
-        GenericSwitchDevice,
-        GoogleDisplayDevice,
-        GoogleTVDevice,
-        OccupancySensorDevice,
-        OnOffLightDevice,
-        OnOffLightSwitchDevice,
-        OnOffPluginUnitDevice,
-        OnOffSensorDevice,
-        RootNodeDevice,
-        SpeakerDevice,
-        ThermostatDevice,
+      ColorTemperatureLightDevice,
+      ContactSensorDevice,
+      DimmableLightDevice,
+      DoorLockDevice,
+      ExtendedColorLightDevice,
+      FanDevice,
+      GenericSwitchDevice,
+      GoogleCameraDevice,
+      GoogleDisplayDevice,
+      GoogleDoorbellDevice,
+      GoogleTVDevice,
+      OccupancySensorDevice,
+      OnOffLightDevice,
+      OnOffLightSwitchDevice,
+      OnOffPluginUnitDevice,
+      OnOffSensorDevice,
+      RootNodeDevice,
+      SpeakerDevice,
+      TemperatureSensorDevice,
+      ThermostatDevice,
+      WindowCoveringDevice,
     )
 
-    // 2. Provide supported device traits (with @JvmSuppressWildcards)
+    /**
+     * Provides a list of supported device traits.
+     */
     @Provides
     @Singleton
     fun provideSupportedTraits(): @JvmSuppressWildcards List<TraitFactory<out Trait>> = listOf(
-        AreaAttendanceState,
-        AreaPresenceState,
-        Assistant,
-        AssistantBroadcast,
-        AssistantFulfillment,
-        BasicInformation,
-        BooleanState,
-        OccupancySensing,
-        OnOff,
-        Notification,
-        LevelControl,
-        TemperatureControl,
-        TemperatureMeasurement,
-        Thermostat,
-        Time,
-        Volume,
+      AreaAttendanceState,
+      AreaPresenceState,
+      Assistant,
+      AssistantBroadcast,
+      AssistantFulfillment,
+      AudioOutput,
+      BasicInformation,
+      BooleanState,
+      DoorLock,
+      ExtendedApplicationLauncher,
+      ExtendedLevelControl,
+      ExtendedMediaInput,
+      ExtendedMediaPlayback,
+      FanControl,
+      LevelControl,
+      MediaActivityState,
+      MediaInput,
+      MediaPlayback,
+      Notification,
+      OccupancySensing,
+      OnOff,
+      PushAvStreamTransport,
+      TemperatureControl,
+      TemperatureMeasurement,
+      Thermostat,
+      Time,
+      Volume,
+      VoiceStarter,
+      WebRtcLiveView,
+      WindowCovering,
     )
 
-    // 3. Provide the FactoryRegistry, also applying @JvmSuppressWildcards to parameters
+    /**
+     * Provides the [FactoryRegistry] for the Home SDK.
+     *
+     * @param types The list of supported device types.
+     * @param traits The list of supported device traits.
+     */
     @Provides
     @Singleton
     fun provideFactoryRegistry(
@@ -105,7 +170,11 @@ object HomeModule {
         traits = traits
     )
 
-    // 4. Provide HomeConfig
+    /**
+     * Provides the [HomeConfig] for the Home SDK.
+     *
+     * @param registry The [FactoryRegistry] for the Home SDK.
+     */
     @Provides
     @Singleton
     fun provideHomeConfig(registry: FactoryRegistry): HomeConfig = HomeConfig(
@@ -113,14 +182,14 @@ object HomeModule {
         factoryRegistry = registry
     )
 
-    // 5. Provide HomeClient instance
+    /**
+     * Provides the [HomeClient] instance.
+     *
+     * @param homeClientProvider The provider for obtaining a [HomeClient] instance.
+     */
     @Provides
     @Singleton
     fun provideHomeClient(
-        @ApplicationContext context: Context,
-        homeConfig: HomeConfig
-    ): HomeClient = HomeClientProvider.getClient(
-        context = context,
-        homeConfig = homeConfig
-    )
+        homeClientProvider: HomeClientProvider
+    ): HomeClient = homeClientProvider.getClient()
 }

@@ -23,6 +23,8 @@ import com.google.home.DeviceType
 import com.google.home.Trait
 import com.google.home.TraitFactory
 import com.google.home.matter.standard.BooleanState
+import com.google.home.matter.standard.FanControl
+import com.google.home.matter.standard.FanControlTrait
 import com.google.home.matter.standard.LevelControl
 import com.google.home.matter.standard.OccupancySensing
 import com.google.home.matter.standard.OccupancySensingTrait
@@ -32,7 +34,7 @@ import com.google.home.matter.standard.ThermostatTrait
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
-class StarterViewModel (val candidateVM: CandidateViewModel? = null) : ViewModel() {
+class StarterViewModel () : ViewModel() {
 
     // List of operations available when creating automation starters:
     enum class Operation {
@@ -46,33 +48,26 @@ class StarterViewModel (val candidateVM: CandidateViewModel? = null) : ViewModel
 
     open class Operations (val operations : List<Operation>)
 
-    val name: MutableStateFlow<String?>
-    val description: MutableStateFlow<String?>
+    val name: MutableStateFlow<String?> = MutableStateFlow(null)
+    val description: MutableStateFlow<String?> = MutableStateFlow(null)
 
-    val deviceVM : MutableStateFlow<DeviceViewModel?>
-    val trait : MutableStateFlow<TraitFactory<out Trait>?>
-    val operation : MutableStateFlow<Operation?>
+    // Initialize containers for starter attributes:
+    val deviceVM : MutableStateFlow<DeviceViewModel?> = MutableStateFlow(null)
+    val trait : MutableStateFlow<TraitFactory<out Trait>?> = MutableStateFlow(null)
+    val operation : MutableStateFlow<Operation?> = MutableStateFlow(null)
 
-    val valueOnOff : MutableStateFlow<Boolean>
-    val valueLevel : MutableStateFlow<UByte>
-    val valueBooleanState : MutableStateFlow<Boolean>
-    val valueOccupancy : MutableStateFlow<OccupancySensingTrait.OccupancyBitmap>
-    val valueThermostat : MutableStateFlow<ThermostatTrait.SystemModeEnum>
+    // Initialize containers for potential starter value:
+    val valueOnOff : MutableStateFlow<Boolean> = MutableStateFlow(true)
+    val valueLevel : MutableStateFlow<UByte> = MutableStateFlow(50u)
+    val valueBooleanState : MutableStateFlow<Boolean> = MutableStateFlow(true)
+    val valueOccupancy : MutableStateFlow<OccupancySensingTrait.OccupancyBitmap> =
+        MutableStateFlow(OccupancySensingTrait.OccupancyBitmap())
+    val valueThermostat : MutableStateFlow<ThermostatTrait.SystemModeEnum> =
+        MutableStateFlow(ThermostatTrait.SystemModeEnum.Off)
+    val valueFanMode : MutableStateFlow<FanControlTrait.FanModeEnum> =
+        MutableStateFlow(FanControlTrait.FanModeEnum.Off)
 
     init {
-        // Initialize containers for name and description:
-        name = MutableStateFlow(null)
-        description = MutableStateFlow(null)
-        // Initialize containers for starter attributes:
-        deviceVM = MutableStateFlow(null)
-        trait = MutableStateFlow(null)
-        operation = MutableStateFlow(null)
-        // Initialize containers for potential starter value:
-        valueOnOff = MutableStateFlow(true)
-        valueLevel = MutableStateFlow(50u)
-        valueBooleanState = MutableStateFlow(true)
-        valueOccupancy = MutableStateFlow(OccupancySensingTrait.OccupancyBitmap())
-        valueThermostat = MutableStateFlow(ThermostatTrait.SystemModeEnum.Off)
 
         // Subscribe to changes on dynamic values:
         viewModelScope.launch { subscribeToDevice() }
@@ -116,6 +111,12 @@ class StarterViewModel (val candidateVM: CandidateViewModel? = null) : ViewModel
             Operation.LESS_THAN_OR_EQUALS
         ))
 
+        // List of operations available when comparing fan modes (enum comparison):
+        object FanModeOperations : Operations(listOf(
+            Operation.EQUALS,
+            Operation.NOT_EQUALS
+        ))
+
         // Map traits and the comparison operations they support:
         val starterOperations: Map<TraitFactory<out Trait>, Operations> = mapOf(
             OnOff to BooleanOperations,
@@ -123,6 +124,7 @@ class StarterViewModel (val candidateVM: CandidateViewModel? = null) : ViewModel
             BooleanState to BooleanOperations,
             OccupancySensing to OccupancyOperations,
             Thermostat to BooleanOperations,
+            FanControl to FanModeOperations,
         )
 
         enum class OnOffValue {
@@ -165,6 +167,20 @@ class StarterViewModel (val candidateVM: CandidateViewModel? = null) : ViewModel
             ThermostatValue.Heat to ThermostatTrait.SystemModeEnum.Heat,
             ThermostatValue.Cool to ThermostatTrait.SystemModeEnum.Cool,
             ThermostatValue.Off to ThermostatTrait.SystemModeEnum.Off,
+        )
+
+        enum class FanModeValue {
+            Off,
+            Low,
+            Medium,
+            High,
+        }
+
+        val valuesFanMode: Map<FanModeValue, FanControlTrait.FanModeEnum> = mapOf(
+            FanModeValue.Off to FanControlTrait.FanModeEnum.Off,
+            FanModeValue.Low to FanControlTrait.FanModeEnum.Low,
+            FanModeValue.Medium to FanControlTrait.FanModeEnum.Medium,
+            FanModeValue.High to FanControlTrait.FanModeEnum.High,
         )
     }
 }

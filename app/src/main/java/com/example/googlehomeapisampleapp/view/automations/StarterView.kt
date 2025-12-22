@@ -57,6 +57,8 @@ import com.google.home.Trait
 import com.google.home.TraitFactory
 import com.google.home.matter.standard.BooleanState
 import com.google.home.matter.standard.ContactSensorDevice
+import com.google.home.matter.standard.FanControl
+import com.google.home.matter.standard.FanControlTrait
 import com.google.home.matter.standard.LevelControl
 import com.google.home.matter.standard.OccupancySensing
 import com.google.home.matter.standard.OccupancySensingTrait
@@ -96,6 +98,8 @@ fun StarterView (homeAppVM: HomeAppViewModel) {
         mutableStateOf(starterVM.valueOccupancy.value) }
     val starterValueThermostat: MutableState<ThermostatTrait.SystemModeEnum?> = remember {
         mutableStateOf(starterVM.valueThermostat.value) }
+    val starterValueFanMode: MutableState<FanControlTrait.FanModeEnum?> = remember {
+        mutableStateOf(starterVM.valueFanMode.value) }
     // Variables to track UI state for dropdown views:
     var expandedDeviceSelection: Boolean by remember { mutableStateOf(false) }
     var expandedTraitSelection: Boolean by remember { mutableStateOf(false) }
@@ -103,6 +107,7 @@ fun StarterView (homeAppVM: HomeAppViewModel) {
     var expandedBooleanSelection: Boolean by remember { mutableStateOf(false) }
     var expandedOccupancySelection: Boolean by remember { mutableStateOf(false) }
     var expandedThermostatSelection: Boolean by remember { mutableStateOf(false) }
+    var expandedFanModeSelection: Boolean by remember { mutableStateOf(false) }
 
     // Back action for closing view:
     BackHandler {
@@ -187,7 +192,6 @@ fun StarterView (homeAppVM: HomeAppViewModel) {
             Row(horizontalArrangement = Arrangement.Start, modifier = Modifier.fillMaxWidth()) {
                 Box {
                     DropdownMenu(expanded = expandedOperationSelection, onDismissRequest = { expandedOperationSelection = false }) {
-                        // ...
                         if (!StarterViewModel.starterOperations.containsKey(starterTrait.value))
                             return@DropdownMenu
 
@@ -241,9 +245,9 @@ fun StarterView (homeAppVM: HomeAppViewModel) {
                 LevelControl -> {
                     Box (Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
                         LevelSlider(value = starterValueLevel.value?.toFloat()!!, low = 0f, high = 254f, steps = 0,
-                                    modifier = Modifier.padding(top = 16.dp),
-                                    onValueChangeFinished = { value : Float -> starterValueLevel.value = value.toUInt().toUByte() },
-                                    isEnabled = true
+                            modifier = Modifier.padding(top = 16.dp),
+                            onValueChangeFinished = { value : Float -> starterValueLevel.value = value.toUInt().toUByte() },
+                            isEnabled = true
                         )
                     }
                 }
@@ -325,19 +329,51 @@ fun StarterView (homeAppVM: HomeAppViewModel) {
                         }
                     }
                 }
+                FanControl -> {
+                    TextButton(onClick = { expandedFanModeSelection = true }, enabled = true) {
+                        val state: String? = StarterViewModel.valuesFanMode.entries
+                            .firstOrNull { it.value == starterValueFanMode.value }?.key?.toString()
+                        Text(text = (state ?: stringResource(R.string.starter_text_select)) + " ▾", fontSize = 32.sp)
+                    }
+
+                    Row(horizontalArrangement = Arrangement.Start, modifier = Modifier.fillMaxWidth()) {
+                        Box {
+                            DropdownMenu(expanded = expandedFanModeSelection, onDismissRequest = { expandedFanModeSelection = false }) {
+                                for (value in StarterViewModel.valuesFanMode.keys) {
+                                    DropdownMenuItem(
+                                        text = { Text(value.toString()) },
+                                        onClick = {
+                                            scope.launch {
+                                                starterValueFanMode.value = StarterViewModel.valuesFanMode[value]
+                                            }
+                                            expandedFanModeSelection = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         // Buttons to save changes for the starter on draft automation:
         Column(modifier = Modifier.padding(16.dp).align(Alignment.BottomCenter)) {
             // Check on whether all options are selected:
             val isOptionsSelected: Boolean =
-                        starterDeviceVM.value != null &&
+                starterDeviceVM.value != null &&
                         starterTrait.value != null &&
                         starterOperation.value != null
-            // Check on whether at least one value provided:
-            val isValueProvided: Boolean =
-                        starterValueOnOff.value != null ||
-                        starterValueLevel.value != null
+
+            // Check value based on selected trait:
+            val isValueProvided: Boolean = when (starterTrait.value) {
+                OnOff -> starterValueOnOff.value != null
+                LevelControl -> starterValueLevel.value != null
+                BooleanState -> starterValueBooleanState.value != null
+                OccupancySensing -> starterValueOccupancy.value != null
+                Thermostat -> starterValueThermostat.value != null
+                FanControl -> starterValueFanMode.value != null
+                else -> false
+            }
 
             if (starterVMs.contains(starterVM)) {
                 // Update starter button:
@@ -353,7 +389,10 @@ fun StarterView (homeAppVM: HomeAppViewModel) {
                             starterVM.valueBooleanState.emit(starterValueBooleanState.value!!)
                             starterVM.valueOccupancy.emit(starterValueOccupancy.value!!)
                             starterVM.valueThermostat.emit(starterValueThermostat.value!!)
-
+                            starterVM.valueFanMode.emit(starterValueFanMode.value ?: FanControlTrait.FanModeEnum.Off)
+                            val updatedList = draftVM.starterVMs.value.toMutableList()
+                            updatedList.add(starterVM)
+                            draftVM.starterVMs.emit(updatedList)
                             draftVM.selectedStarterVM.emit(null)
                         }
                     })
@@ -363,7 +402,9 @@ fun StarterView (homeAppVM: HomeAppViewModel) {
                     enabled = true,
                     onClick = {
                         scope.launch {
-                            draftVM.starterVMs.value.remove(starterVM)
+                            val updatedList = draftVM.starterVMs.value.toMutableList()
+                            updatedList.remove(starterVM)
+                            draftVM.starterVMs.emit(updatedList)
                             draftVM.selectedStarterVM.emit(null)
                         }
                     })
@@ -382,8 +423,11 @@ fun StarterView (homeAppVM: HomeAppViewModel) {
                             starterVM.valueBooleanState.emit(starterValueBooleanState.value!!)
                             starterVM.valueOccupancy.emit(starterValueOccupancy.value!!)
                             starterVM.valueThermostat.emit(starterValueThermostat.value!!)
+                            starterVM.valueFanMode.emit(starterValueFanMode.value ?: FanControlTrait.FanModeEnum.Off)
 
-                            draftVM.starterVMs.value.add(starterVM)
+                            val updatedList = draftVM.starterVMs.value.toMutableList()
+                            updatedList.add(starterVM)
+                            draftVM.starterVMs.emit(updatedList)
                             draftVM.selectedStarterVM.emit(null)
                         }
                     })

@@ -60,6 +60,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.googlehomeapisampleapp.FabricType
 import com.example.googlehomeapisampleapp.R
 import com.example.googlehomeapisampleapp.view.shared.TabbedMenuView
 import com.example.googlehomeapisampleapp.viewmodel.HomeAppViewModel
@@ -69,6 +70,12 @@ import com.example.googlehomeapisampleapp.viewmodel.structures.StructureViewMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
+const val TAG="DevicesView"
+/**
+ * Composable for displaying the account button and overflow menu in the Devices view.
+ *
+ * @param homeAppVM The [HomeAppViewModel] providing the data and logic.
+ */
 @Composable
 fun DevicesAccountButton (homeAppVM: HomeAppViewModel) {
     val context = LocalContext.current
@@ -84,8 +91,10 @@ fun DevicesAccountButton (homeAppVM: HomeAppViewModel) {
      */
     Row {
         IconButton(
-            onClick = { homeAppVM.homeApp.permissionsManager.requestPermissions() },
-            modifier = Modifier.size(48.dp).background(Color.Transparent)
+            onClick = { homeAppVM.homeApp.permissionsManager.requestPermissions(true) },
+            modifier = Modifier
+                .size(48.dp)
+                .background(Color.Transparent)
         ) {
             Icon(
                 imageVector = Icons.Default.AccountCircle,
@@ -112,10 +121,23 @@ fun DevicesAccountButton (homeAppVM: HomeAppViewModel) {
 
                 }
             )
+            DropdownMenuItem(
+              text = { Text("Google Sign-In") },
+              onClick = { homeAppVM.signInWithGoogleAccount(context) },
+            )
         }
     }
 }
 
+/**
+ * Composable for displaying the Devices view, which shows a list of structures and devices.
+ *
+ * @param homeAppVM The [HomeAppViewModel] providing the data and logic.
+ * @param onRequestCreateRoom Callback for requesting to create a new room.
+ * @param onRequestRoomSettings Callback for requesting to view/edit room settings.
+ * @param onRequestMoveDevice Callback for requesting to move a device to a different room.
+ * @param onRequestAddHub Callback for requesting to add a new hub.
+ */
 @Composable
 fun DevicesView(
     homeAppVM: HomeAppViewModel,
@@ -134,7 +156,6 @@ fun DevicesView(
     var plusMenuExpanded by remember { mutableStateOf(false) }
 
     var isCommissioningMenuVisible by remember { mutableStateOf(false) }
-    var toGoogleOnly: Boolean = false
 
     Column(modifier = Modifier.fillMaxHeight()) {
 
@@ -170,7 +191,7 @@ fun DevicesView(
                 Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
                     if (structureVMs.size > 1) {
                         TextButton(onClick = { structurePickerExpanded = true }) {
-                            Text(text = structureName + " ▾", fontSize = 32.sp)
+                            Text(text = "$structureName ▾", fontSize = 32.sp)
                         }
                     } else {
                         TextButton(onClick = { structurePickerExpanded = true }) {
@@ -195,7 +216,9 @@ fun DevicesView(
                     }
                 }
 
-                Column(modifier = Modifier.verticalScroll(rememberScrollState()).weight(weight = 1f, fill = false)) {
+                Column(modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .weight(weight = 1f, fill = false)) {
                     DeviceListComponent(
                         homeAppVM = homeAppVM,
                         onRoomClick = onRequestRoomSettings,
@@ -204,7 +227,9 @@ fun DevicesView(
                 }
             }
 
-            Box(modifier = Modifier.padding(16.dp).align(Alignment.BottomEnd)) {
+            Box(modifier = Modifier
+                .padding(16.dp)
+                .align(Alignment.BottomEnd)) {
                 Button(onClick = { isCommissioningMenuVisible = true }) {
                     Text(stringResource(R.string.devices_button_add))
                 }
@@ -216,14 +241,14 @@ fun DevicesView(
                         text = { Text("Add Device to Google Fabric Only") },
                         onClick = {
                             isCommissioningMenuVisible = false
-                            homeAppVM.homeApp.commissioningManager.requestCommissioning(toGoogleOnly = true)
+                            homeAppVM.homeApp.commissioningManager.requestCommissioning(FabricType.GOOGLE_FABRIC)
                         }
                     )
                     DropdownMenuItem(
                         text = { Text("Add Device to Google & 3P Fabric") },
                         onClick = {
                             isCommissioningMenuVisible = false
-                            homeAppVM.homeApp.commissioningManager.requestCommissioning(toGoogleOnly = false)
+                            homeAppVM.homeApp.commissioningManager.requestCommissioning(FabricType.THIRD_PARTY_FABRIC)
                         }
                     )
                 }
@@ -234,6 +259,13 @@ fun DevicesView(
     }
 }
 
+/**
+ * Composable for displaying a single device item in a list.
+ *
+ * @param deviceVM The [DeviceViewModel] for the device.
+ * @param homeAppVM The [HomeAppViewModel] for navigation.
+ * @param onLongPress Callback for when the device item is long-pressed.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DeviceListItem(
@@ -259,6 +291,12 @@ fun DeviceListItem(
     }
 }
 
+/**
+ * Composable for displaying a single room item in a list.
+ *
+ * @param roomVM The [RoomViewModel] for the room.
+ * @param onClick Callback for when the room item is clicked.
+ */
 @Composable
 fun RoomListItem(roomVM: RoomViewModel, onClick: (RoomViewModel) -> Unit) {
     val roomName by roomVM.name.collectAsState()
@@ -273,6 +311,13 @@ fun RoomListItem(roomVM: RoomViewModel, onClick: (RoomViewModel) -> Unit) {
     }
 }
 
+/**
+ * Composable for displaying a list of devices, grouped by rooms.
+ *
+ * @param homeAppVM The [HomeAppViewModel] providing the data.
+ * @param onRoomClick Callback for when a room is clicked.
+ * @param onDeviceLongPress Callback for when a device is long-pressed.
+ */
 @Composable
 fun DeviceListComponent(
     homeAppVM: HomeAppViewModel,
@@ -301,7 +346,9 @@ fun DeviceListComponent(
 
         if (selectedDeviceVMsWithoutRooms.isNotEmpty()) {
 
-            Column (Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth()) {
+            Column (Modifier
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .fillMaxWidth()) {
                 Text("Not in a room", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }
 
@@ -313,6 +360,13 @@ fun DeviceListComponent(
     }
 }
 
+/**
+ * Composable for displaying the top bar of the Devices view.
+ *
+ * @param title The title to display in the top bar.
+ * @param leftButton Optional Composable for a button on the left side of the top bar.
+ * @param rightButtons List of Composable for buttons on the right side of the top bar.
+ */
 @Composable
 fun DevicesTopBar(
     title: String,

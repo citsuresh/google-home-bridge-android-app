@@ -28,23 +28,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 
 class AutomationViewModel (var automation: Automation) : ViewModel() {
 
-    val id: MutableStateFlow<String>
-    val name: MutableStateFlow<String>
-    val description: MutableStateFlow<String>
-    val isActive: MutableStateFlow<Boolean>
-    val isValid: MutableStateFlow<Boolean>
+    val id: MutableStateFlow<String> = MutableStateFlow(automation.id.id)
+    val name: MutableStateFlow<String> = MutableStateFlow(automation.name)
+    val description: MutableStateFlow<String> = MutableStateFlow(automation.description)
+    val isActive: MutableStateFlow<Boolean> = MutableStateFlow(automation.isActive)
+    val isValid: MutableStateFlow<Boolean> = MutableStateFlow(automation.isValid)
     val nodes: MutableStateFlow<List<Node>>
 
     val starters: MutableStateFlow<List<Starter>>
     val actions: MutableStateFlow<List<Action>>
 
     init {
-        // Initialize attributes from the automation:
-        id = MutableStateFlow(automation.id.id)
-        name = MutableStateFlow(automation.name)
-        description = MutableStateFlow(automation.description)
-        isActive = MutableStateFlow(automation.isActive)
-        isValid = MutableStateFlow(automation.isValid)
         nodes = MutableStateFlow(retrieveNodes(automation.automationGraph!!))
         // Initialize starters and actions by parsing nodes:
         starters = MutableStateFlow(retrieveStarters(nodes.value))

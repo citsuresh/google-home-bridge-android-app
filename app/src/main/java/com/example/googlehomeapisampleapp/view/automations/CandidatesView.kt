@@ -1,4 +1,3 @@
-
 /* Copyright 2025 Google LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -78,12 +77,17 @@ fun CandidateListComponent (homeAppVM: HomeAppViewModel) {
     BlankListItem(homeAppVM)
     val structureVM = homeAppVM.selectedStructureVM.collectAsState().value
     val repository = AutomationsRepository()
-    val hasEnoughLights = structureVM?.let {
-        repository.hasEnoughLights(it.deviceVMs.value)
-    } ?: false
+    val availableAutomations = structureVM?.let {
+        predefinedAutomations.filter { automation ->
+            val hasEnoughLights = repository.hasEnoughLights(it.deviceVMs.value)
+            val hasLightsAndThermostat = repository.hasLightsAndThermostat(it.deviceVMs.value)
+            val hasRequiredDevicesForSleep = repository.hasRequiredDevicesForSleepAutomation(it.deviceVMs.value)
+            automation.isAvailable(hasEnoughLights, hasLightsAndThermostat, hasRequiredDevicesForSleep)
+        }
+    } ?: emptyList()
 
-    if (hasEnoughLights) {
-        PredefinedListSection(homeAppVM)
+    if (availableAutomations.isNotEmpty()) {
+        PredefinedListSection(homeAppVM, availableAutomations)
     }
 
     Column (Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth()) {
@@ -102,7 +106,14 @@ fun BlankListItem (homeAppVM: HomeAppViewModel) {
 
     Box (Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
         Column (Modifier.fillMaxWidth().clickable {
-            scope.launch { homeAppVM.selectedDraftVM.emit(DraftViewModel(null)) }
+            scope.launch {
+                homeAppVM.selectedDraftVM.emit(
+                    DraftViewModel(
+                        candidateVM = null,
+                        automationType = DraftViewModel.AutomationType.CUSTOM
+                    )
+                )
+            }
         }) {
             Text(stringResource(R.string.candidate_title_new), fontSize = 20.sp)
             Text(stringResource(R.string.candidate_description_new), fontSize = 16.sp)
@@ -113,27 +124,49 @@ fun BlankListItem (homeAppVM: HomeAppViewModel) {
 private data class PredefinedAutomation(
     val title: String,
     val description: String,
+    val automationType: DraftViewModel.AutomationType,
+    val isAvailable: (hasEnoughLights: Boolean, hasLightsAndThermostat: Boolean, hasRequiredDevicesForSleep: Boolean) -> Boolean,
     val onClick: suspend (CoroutineScope, HomeAppViewModel) -> Unit
 )
 
 private val predefinedAutomations = listOf(
     PredefinedAutomation(
         title = "On/Off Automation",
-        description = "Simple automation that turns off a light when another light is turned off."
+        description = "Simple automation that turns off a light when another light is turned off.",
+        automationType = DraftViewModel.AutomationType.ON_OFF,
+        isAvailable = { hasEnoughLights, _, _ -> hasEnoughLights }
     ) { scope, vm ->
         scope.launch { vm.showPredefinedOnOffDraft() }
+    },
+    PredefinedAutomation(
+        title = "Speaker and Fan Automation",
+        description = "Say 'Hey Google, I can't sleep' to play ocean sounds, turn on fan and outlet.",
+        automationType = DraftViewModel.AutomationType.SPEAKER_AND_FAN,
+        isAvailable = { _, _, hasSleepDevices -> hasSleepDevices }
+    ) { scope, vm ->
+        scope.launch { vm.showPredefinedSpeakerAndFanDraft() }
+    },
+    PredefinedAutomation(
+        title = "Lights/Thermostat Automation",
+        description = "Turn on lights and set thermostat to Auto mode when door is unlocked.",
+        automationType = DraftViewModel.AutomationType.LIGHT_AND_THERMOSTAT,
+        isAvailable = { _, hasLightsAndThermostat, _ -> hasLightsAndThermostat }
+    ) { scope, vm ->
+        scope.launch { vm.showPredefinedLightAndThermostatDraft() }
     }
-    //  In future: window blinds, thermostat, speaker/fan, TV
 )
 
 @Composable
-private fun PredefinedListSection(homeAppVM: HomeAppViewModel) {
+private fun PredefinedListSection(
+    homeAppVM: HomeAppViewModel,
+    availableAutomations: List<PredefinedAutomation>
+) {
     val scope = rememberCoroutineScope()
 
     Column (Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth()) {
         Text("Predefined", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
 
-        predefinedAutomations.forEach { automation ->
+        availableAutomations.forEach { automation ->
             Box(Modifier.padding(horizontal = 9.dp, vertical = 8.dp)) {
                 Column(
                     Modifier
@@ -158,7 +191,14 @@ fun CandidateListItem (candidateVM: CandidateViewModel, homeAppVM: HomeAppViewMo
 
     Box (Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
         Column (Modifier.fillMaxWidth().clickable {
-            scope.launch { homeAppVM.selectedDraftVM.emit(DraftViewModel(candidateVM)) }
+            scope.launch {
+                homeAppVM.selectedDraftVM.emit(
+                    DraftViewModel(
+                        candidateVM = candidateVM,
+                        automationType = DraftViewModel.AutomationType.CUSTOM
+                    )
+                )
+            }
         }) {
             Text(candidateVM.name, fontSize = 20.sp)
             Text(candidateVM.description, fontSize = 16.sp)

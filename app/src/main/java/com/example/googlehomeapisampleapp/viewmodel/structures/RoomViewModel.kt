@@ -25,20 +25,17 @@ import com.google.home.Structure
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class RoomViewModel (val structure: Structure, val room: Room) : ViewModel() {
 
-    var id : String
+    var id : String = room.id.id
     private val _name = MutableStateFlow("")
     val name: StateFlow<String> = _name.asStateFlow()
 
     val deviceVMs : MutableStateFlow<List<DeviceViewModel>>
 
     init {
-        // Initialize permanent values for a room:
-        id = room.id.id
         _name.value = room.name
 
         // Initialize dynamic values for a structure:

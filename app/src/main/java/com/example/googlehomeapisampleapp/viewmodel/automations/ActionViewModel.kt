@@ -23,7 +23,9 @@ import com.google.home.CommandDescriptor
 import com.google.home.DeviceType
 import com.google.home.Trait
 import com.google.home.TraitFactory
+import com.google.home.annotation.HomeExperimentalApi
 import com.google.home.automation.CommandCandidate
+import com.google.home.matter.standard.FanControl
 import com.google.home.matter.standard.LevelControl
 import com.google.home.matter.standard.LevelControlTrait
 import com.google.home.matter.standard.OnOff
@@ -34,7 +36,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 
-class ActionViewModel (val candidateVM: CandidateViewModel? = null) : ViewModel() {
+class ActionViewModel (candidateVM: CandidateViewModel? = null) : ViewModel() {
 
     // List of operations available when creating automation starters:
     enum class Action {
@@ -44,29 +46,25 @@ class ActionViewModel (val candidateVM: CandidateViewModel? = null) : ViewModel(
         MODE_HEAT,
         MODE_COOL,
         MODE_OFF,
+        FAN_OFF,
+        FAN_LOW,
+        FAN_MEDIUM,
+        FAN_HIGH,
     }
 
     open class Actions (val actions : List<Action>)
 
-    val name: MutableStateFlow<String?>
-    val description: MutableStateFlow<String?>
+    val name: MutableStateFlow<String?> = MutableStateFlow(null)
+    val description: MutableStateFlow<String?> = MutableStateFlow(null)
 
-    val deviceVM: MutableStateFlow<DeviceViewModel?>
-    val trait: MutableStateFlow<Trait?>
-    val action: MutableStateFlow<Action?>
+    // Initialize containers for action attributes:
+    val deviceVM: MutableStateFlow<DeviceViewModel?> = MutableStateFlow(null)
+    val trait: MutableStateFlow<Trait?> = MutableStateFlow(null)
+    val action: MutableStateFlow<Action?> = MutableStateFlow(null)
 
-    val valueLevel: MutableStateFlow<UByte?>
+    val valueLevel: MutableStateFlow<UByte?> = MutableStateFlow(50u)
 
     init {
-        // Initialize containers for name and description:
-        name = MutableStateFlow(null)
-        description = MutableStateFlow(null)
-        // Initialize containers for action attributes:
-        deviceVM = MutableStateFlow(null)
-        trait = MutableStateFlow(null)
-        action = MutableStateFlow(null)
-
-        valueLevel = MutableStateFlow(50u)
 
         if (candidateVM != null)
             parseCandidateVM(candidateVM)
@@ -91,13 +89,14 @@ class ActionViewModel (val candidateVM: CandidateViewModel? = null) : ViewModel(
         }
     }
 
+    @OptIn(HomeExperimentalApi::class)
     private fun parseCandidateVM(candidateVM: CandidateViewModel) {
         viewModelScope.launch {
             val candidate: CommandCandidate = candidateVM.candidate as CommandCandidate
             deviceVM.emit(candidateVM.deviceVM)
             val candidateTrait = candidateVM.deviceVM?.traits?.mapNotNull { allDeviceTraits -> allDeviceTraits.firstOrNull() }
             trait.emit(candidateTrait?.firstOrNull())
-            action.emit(commandMap.get(candidate.commandDescriptor))
+            action.emit(commandMap[candidate.commandDescriptor])
         }
     }
 
@@ -121,17 +120,26 @@ class ActionViewModel (val candidateVM: CandidateViewModel? = null) : ViewModel(
             Action.MODE_OFF,
         ))
 
-        // Map traits and the comparison operations they support:
+        // List of actions available for FanControl trait:
+        object FanControlActions : Actions(listOf(
+            Action.FAN_OFF,
+            Action.FAN_LOW,
+            Action.FAN_MEDIUM,
+            Action.FAN_HIGH,
+        ))
+
+        // Map traits and the actions they support:
         val actionActions: Map<TraitFactory<out Trait>, Actions> = mapOf(
             OnOff to OnOffActions,
             LevelControl to LevelActions,
             // BooleanState - No Actions
             // OccupancySensing - No Actions
             Thermostat to ThermostatActions,
+            FanControl to FanControlActions,
         )
 
         // Map of supported commands from Discovery API:
-        val commandMap: Map<CommandDescriptor, Action> = mapOf(
+        @OptIn(HomeExperimentalApi::class) val commandMap: Map<CommandDescriptor, Action> = mapOf(
             OnOffTrait.OnCommand to Action.ON,
             OnOffTrait.OffCommand to Action.OFF,
             LevelControlTrait.MoveToLevelWithOnOffCommand to Action.MOVE_TO_LEVEL

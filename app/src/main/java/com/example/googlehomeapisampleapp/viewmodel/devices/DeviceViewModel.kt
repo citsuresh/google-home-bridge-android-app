@@ -1,4 +1,3 @@
-
 /* Copyright 2025 Google LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +18,7 @@ package com.example.googlehomeapisampleapp.viewmodel.devices
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.googlehomeapisampleapp.HomeApp
+import com.example.googlehomeapisampleapp.HomeModule_ProvideSupportedTraitsFactory
 import com.google.home.ConnectivityState
 import com.google.home.DecommissionEligibility
 import com.google.home.DeviceType
@@ -28,18 +27,24 @@ import com.google.home.HomeDevice
 import com.google.home.Trait
 import com.google.home.TraitFactory
 import com.google.home.automation.UnknownDeviceType
+import com.google.home.google.Assistant
 import com.google.home.google.GoogleCameraDevice
 import com.google.home.google.GoogleDisplayDevice
 import com.google.home.google.GoogleDoorbellDevice
 import com.google.home.google.WebRtcLiveView
-import com.google.home.matter.standard.BasicInformation
 import com.google.home.matter.standard.BooleanState
 import com.google.home.matter.standard.ColorTemperatureLightDevice
 import com.google.home.matter.standard.ContactSensorDevice
 import com.google.home.matter.standard.DimmableLightDevice
+import com.google.home.matter.standard.DoorLock
+import com.google.home.matter.standard.DoorLockDevice
+import com.google.home.matter.standard.DoorLockTrait
 import com.google.home.matter.standard.ExtendedColorLightDevice
+import com.google.home.matter.standard.FanControl
+import com.google.home.matter.standard.FanDevice
 import com.google.home.matter.standard.GenericSwitchDevice
 import com.google.home.matter.standard.LevelControl
+import com.google.home.matter.standard.MediaPlayback
 import com.google.home.matter.standard.OccupancySensing
 import com.google.home.matter.standard.OccupancySensorDevice
 import com.google.home.matter.standard.OnOff
@@ -47,18 +52,29 @@ import com.google.home.matter.standard.OnOffLightDevice
 import com.google.home.matter.standard.OnOffLightSwitchDevice
 import com.google.home.matter.standard.OnOffPluginUnitDevice
 import com.google.home.matter.standard.OnOffSensorDevice
+import com.google.home.matter.standard.RootNodeDevice
 import com.google.home.matter.standard.SpeakerDevice
+import com.google.home.matter.standard.TemperatureMeasurement
+import com.google.home.matter.standard.TemperatureSensorDevice
 import com.google.home.matter.standard.Thermostat
 import com.google.home.matter.standard.ThermostatDevice
+import com.google.home.matter.standard.WindowCovering
+import com.google.home.matter.standard.WindowCoveringDevice
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 
+/**
+ * ViewModel for a single [HomeDevice]. This ViewModel provides access to device properties,
+ * connectivity state, and allows for device actions like renaming and deleting.
+ *
+ * @property device The [HomeDevice] instance this ViewModel represents.
+ */
 class DeviceViewModel (val device: HomeDevice) : ViewModel() {
 
-    var id : String
+    var id : String = device.id.id
     val name = MutableStateFlow(device.name)
     var connectivity: ConnectivityState
 
@@ -70,8 +86,6 @@ class DeviceViewModel (val device: HomeDevice) : ViewModel() {
     val uiEventFlow: SharedFlow<UiEvent> = _uiEventFlow
 
     init {
-        // Initialize permanent values for a device:
-        id = device.id.id
         // Initialize the connectivity state:
         connectivity = device.sourceConnectivity.connectivityState
 
@@ -88,6 +102,8 @@ class DeviceViewModel (val device: HomeDevice) : ViewModel() {
      * Renames the device both locally and reflects it in the UI.
      * - Calls `setName()` to update the HomeDevice object
      * - Emits the new name to `name` state flow so the UI updates reactively
+     *
+     * @param newName The new name for the device.
      */
     fun rename(newName: String) {
         viewModelScope.launch {
@@ -103,6 +119,9 @@ class DeviceViewModel (val device: HomeDevice) : ViewModel() {
         }
     }
 
+    /**
+     * Deletes the device. Checks for decommission eligibility before attempting to delete.
+     */
     fun deleteDevice() {
         viewModelScope.launch {
             try {
@@ -122,6 +141,9 @@ class DeviceViewModel (val device: HomeDevice) : ViewModel() {
         }
     }
 
+    /**
+     * Checks if the device is eligible for decommissioning and shows a toast if not.
+     */
     fun checkDecommissionEligibility() {
         viewModelScope.launch {
             try {
@@ -144,15 +166,17 @@ class DeviceViewModel (val device: HomeDevice) : ViewModel() {
         // Subscribe to changes on device type, and the traits/attributes within:
         device.types().collect { typeSet ->
             // Define the fallback priority order in one place.
-            // This is easy to read and modify.
             val fallbackPriorityOrder = listOf(
-                GoogleDoorbellDevice::class,
+                FanDevice::class,
                 GoogleCameraDevice::class,
-                OnOffLightDevice::class
+                GoogleDoorbellDevice::class,
+                OnOffLightDevice::class,
+                SpeakerDevice::class,
+                TemperatureSensorDevice::class,
             )
 
             // Find the primary type in a single, chained expression.
-            val primaryType =
+            val primaryType: DeviceType =
                 // 1. First, try to find the officially marked primary type.
                 typeSet.find { it.metadata.isPrimaryType }
                 // 2. If not found, use the fallback priority list.
@@ -171,39 +195,81 @@ class DeviceViewModel (val device: HomeDevice) : ViewModel() {
             connectivity = primaryType.metadata.sourceConnectivity.connectivityState
 
             // Container for list of supported traits present on the primary device type:
-            val supportedTraits: List<Trait> = getSupportedTraits(primaryType.traits())
+            // FIX: Pass the current typeSet (all device types) to getSupportedTraits
+            val supportedTraits: List<Trait> = getSupportedTraits(primaryType.traits(), typeSet)
 
             // Store the primary type as the device type:
             type.emit(primaryType)
 
+            // ------------------------------------------------------------------
+            // *** DIRECT NAME OVERRIDE FOR UNRECOGNIZED CAMERA DEVICE ***
+            var emittedTypeName = nameMap[primaryType.factory] ?: "Unsupported Device"
+
+            // Check if the device is the generic RootNodeDevice AND matches the target camera's VID/PID
+            if (primaryType is RootNodeDevice) {
+                val basicInfo = primaryType.standardTraits.basicInformation
+                // Re-added .toInt() conversion here:
+                if (basicInfo?.vendorId?.toInt() == ONN_CAMERA_VID && basicInfo.productId?.toInt() == ONN_CAMERA_PID) {
+                    // Manually override the name string
+                    emittedTypeName = "Camera"
+                }
+            }
+
             // Determine the name for this type and store:
-            typeName.emit(nameMap.get(primaryType.factory) ?: "Unsupported Device")
+            typeName.emit(emittedTypeName)
+            // ------------------------------------------------------------------
 
             // From the primary type, get the supported traits:
             traits.emit(supportedTraits)
 
             // Publish a device status based on connectivity, deviceType, and available traits:
-            status.emit(getDeviceStatus(primaryType, supportedTraits, connectivity))
+            status.emit(getDeviceStatus(primaryType, supportedTraits))
         }
     }
 
-    fun getSupportedTraits(traits: Set<Trait>) : List<Trait> {
+    /**
+     * Determines which traits reported by the device should be considered "supported"
+     * in the sample app, including a whitelist for the Onn camera.
+     */
+    fun getSupportedTraits(traits: Set<Trait>, allDeviceTypes: Set<DeviceType>) : List<Trait> {
         val supportedTraits: MutableList<Trait> = mutableListOf()
 
-        for (trait in traits)
-            if (trait.factory in HomeApp.supportedTraits)
+        // FIX: Use the passed allDeviceTypes parameter instead of device.types().value
+        // Check if this device is the whitelisted Onn camera
+        val isWhitelistedCamera = allDeviceTypes.any { deviceType ->
+            // Re-added .toInt() conversion here:
+            deviceType is RootNodeDevice &&
+                    deviceType.standardTraits.basicInformation?.vendorId?.toInt() == ONN_CAMERA_VID &&
+                    deviceType.standardTraits.basicInformation?.productId?.toInt() == ONN_CAMERA_PID
+        }
+
+        for (trait in traits) {
+            // 1. Check if the trait is in the general supported list
+            val isGenerallySupported = trait.factory in HomeModule_ProvideSupportedTraitsFactory().get()
+
+            // 2. Check if the device is the whitelisted camera AND the trait is WebRtcLiveView
+            val isCameraTraitOverride = isWhitelistedCamera && trait.factory == WebRtcLiveView
+
+            if (isGenerallySupported || isCameraTraitOverride)
                 supportedTraits.add(trait)
+        }
 
         return supportedTraits
     }
 
     companion object {
+        // Define the specific VID/PID for your camera
+        private const val ONN_CAMERA_VID = 5502
+        private const val ONN_CAMERA_PID = 4233
+
         // Map determining which trait value is going to be displayed as status for this device:
         val statusMap: Map <DeviceTypeFactory<out DeviceType>, TraitFactory<out Trait>> = mapOf(
             ColorTemperatureLightDevice to OnOff,
             ContactSensorDevice to BooleanState,
             DimmableLightDevice to OnOff,
+            DoorLockDevice to DoorLock,
             ExtendedColorLightDevice to OnOff,
+            FanDevice to FanControl,
             GenericSwitchDevice to OnOff,
             GoogleCameraDevice to WebRtcLiveView,
             GoogleDisplayDevice to OnOff,
@@ -213,8 +279,10 @@ class DeviceViewModel (val device: HomeDevice) : ViewModel() {
             OnOffLightSwitchDevice to OnOff,
             OnOffPluginUnitDevice to OnOff,
             OnOffSensorDevice to OnOff,
-            SpeakerDevice to LevelControl,
+            SpeakerDevice to MediaPlayback,
+            TemperatureSensorDevice to TemperatureMeasurement,
             ThermostatDevice to Thermostat,
+            WindowCoveringDevice to WindowCovering,
         )
 
         // Map determining the user readable value for this device:
@@ -222,7 +290,9 @@ class DeviceViewModel (val device: HomeDevice) : ViewModel() {
             ColorTemperatureLightDevice to "Light",
             ContactSensorDevice to "Sensor",
             DimmableLightDevice to "Light",
+            DoorLockDevice to "Lock",
             ExtendedColorLightDevice to "Light",
+            FanDevice to "Fan",
             GenericSwitchDevice to "Switch",
             GoogleCameraDevice to "Camera",
             GoogleDisplayDevice to "Hub",
@@ -233,19 +303,59 @@ class DeviceViewModel (val device: HomeDevice) : ViewModel() {
             OnOffPluginUnitDevice to "Outlet",
             OnOffSensorDevice to "Sensor",
             SpeakerDevice to "Speaker",
+            TemperatureSensorDevice to "Temperature Sensor",
             ThermostatDevice to "Thermostat",
+            WindowCoveringDevice to "Window Covering",
         )
 
-        fun <T : Trait?> getDeviceStatus(type: DeviceType, traits : List<T>, connectivity: ConnectivityState) : String {
+        /**
+         * Gets the status string for a device based on its type and traits.
+         *
+         * @param type The [DeviceType] of the device.
+         * @param traits The list of [Trait]s supported by the device.
+         * @return A string representing the device's status.
+         */
+        fun <T : Trait?> getDeviceStatus(type: DeviceType, traits : List<T>) : String {
 
-            val targetTrait: TraitFactory<out Trait>? = statusMap.get(type.factory)
+            // ------------------------------------------------------------------
+            // *** STATUS OVERRIDE FOR GENERIC CAMERA DEVICE ***
+            // Check if the generic RootNodeDevice is the specific camera, and override the status lookup.
+            if (type is RootNodeDevice) {
+                val basicInfo = type.standardTraits.basicInformation
+                // Re-added .toInt() conversion here:
+                if (basicInfo?.vendorId?.toInt() == ONN_CAMERA_VID && basicInfo.productId?.toInt() == ONN_CAMERA_PID) {
+
+                    // Since we know it's a camera, we bypass the map lookup and manually set the target trait
+                    // to the one we expect for a camera (WebRtcLiveView).
+                    val targetTrait: TraitFactory<out Trait> = WebRtcLiveView
+
+                    // Proceed with standard status checks using the overridden targetTrait
+                    if (type.metadata.sourceConnectivity.connectivityState != ConnectivityState.ONLINE &&
+                        type.metadata.sourceConnectivity.connectivityState != ConnectivityState.PARTIALLY_ONLINE)
+                        return "Offline"
+
+                    // Check if the traits list (which is now guaranteed to include WebRtcLiveView if the device reported it)
+                    // actually contains the required trait.
+                    if (traits.none{ it!!.factory == targetTrait })
+                    // This indicates the device is online and is the correct model,
+                    // but failed to report the necessary video trait (WebRtcLiveView).
+                        return "Video trait not present"
+
+                    // Found the trait, now get the status
+                    return getTraitStatus(traits.first { it!!.factory == targetTrait }, type)
+                }
+            }
+            // ------------------------------------------------------------------
+
+            // Normal flow: Get target trait from the map based on the device's factory
+            val targetTrait: TraitFactory<out Trait>? = statusMap[type.factory]
 
             if (type.metadata.sourceConnectivity.connectivityState != ConnectivityState.ONLINE &&
                 type.metadata.sourceConnectivity.connectivityState != ConnectivityState.PARTIALLY_ONLINE)
                 return "Offline"
 
             if (targetTrait == null)
-                return "Unsupported"
+                return "Unsupported" // Default for unmapped device types
 
             if (traits.isEmpty())
                 return "Unsupported"
@@ -256,8 +366,16 @@ class DeviceViewModel (val device: HomeDevice) : ViewModel() {
             return getTraitStatus(traits.first { it!!.factory == targetTrait }, type)
         }
 
+        /**
+         * Gets a user-readable status string for a specific trait.
+         *
+         * @param trait The [Trait] to get the status for.
+         * @param type The [DeviceType] of the device.
+         * @return A string representing the trait's status.
+         */
         fun <T : Trait?> getTraitStatus(trait : T, type: DeviceType) : String {
             val status : String = when (trait) {
+                is Assistant -> { "Assistant Ready" }
                 is BooleanState -> {
                     // BooleanState is special, where the state gains meaning based on the device type:
                     when (type.factory) {
@@ -271,11 +389,37 @@ class DeviceViewModel (val device: HomeDevice) : ViewModel() {
                         }
                     }
                 }
+                is DoorLock -> {
+                    if (trait.lockState == DoorLockTrait.DlLockState.Locked) "Locked" else "Unlocked"
+                }
+                is FanControl -> trait.fanMode?.toString() ?: "Unknown"
                 is LevelControl -> { trait.currentLevel.toString() }
+                is MediaPlayback -> {
+                    val state = trait.currentState
+                    state?.name ?: "Unknown"
+                }
                 is OccupancySensing -> { if (trait.occupancy?.occupied == true) "Occupied" else "Unoccupied" }
                 is OnOff -> { if (trait.onOff == true) "On" else "Off" }
+                is TemperatureMeasurement -> {
+                    val measuredValue = trait.measuredValue
+                    if (measuredValue != null) {
+                        val tempCelsius = measuredValue / 100.0
+                        "%.1f°C".format(tempCelsius)
+                    } else {
+                        "Unknown"
+                    }
+                }
                 is Thermostat -> { trait.systemMode.toString() }
                 is WebRtcLiveView -> { "Live view supported" }
+                is WindowCovering -> {
+                    val targetPercent100ths = trait.targetPositionLiftPercent100ths ?: 0u
+                    val openPercentage = 100 - (targetPercent100ths.toInt() / 100)
+                    if (openPercentage == 0) {
+                        "Closed"
+                    } else {
+                        "${openPercentage}% Open"
+                    }
+                }
                 else -> "Unknown"
             }
             return status
@@ -285,5 +429,4 @@ class DeviceViewModel (val device: HomeDevice) : ViewModel() {
         data class ShowToast(val message: String) : UiEvent()
         object NavigateBack : UiEvent()
     }
-
 }

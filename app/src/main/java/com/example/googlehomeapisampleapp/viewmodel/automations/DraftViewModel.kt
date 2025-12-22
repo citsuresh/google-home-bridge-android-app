@@ -1,4 +1,3 @@
-
 /* Copyright 2025 Google LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,6 +34,10 @@ import com.google.home.google.SimplifiedThermostat
 import com.google.home.google.SimplifiedThermostatTrait
 import com.google.home.matter.standard.BooleanState
 import com.google.home.matter.standard.BooleanState.Companion.stateValue
+import com.google.home.matter.standard.FanControl
+import com.google.home.matter.standard.FanControl.Companion.fanMode
+import com.google.home.matter.standard.FanControl.Companion.setFanMode
+import com.google.home.matter.standard.FanControlTrait
 import com.google.home.matter.standard.LevelControl
 import com.google.home.matter.standard.LevelControl.Companion.currentLevel
 import com.google.home.matter.standard.LevelControlTrait
@@ -52,7 +55,16 @@ class DraftViewModel (
     val candidateVM: CandidateViewModel? = null,
     private val presetDraft: DraftAutomation? = null,
     val isLocked: Boolean = false,
+    val automationType: AutomationType = AutomationType.CUSTOM
 ) : ViewModel() {
+
+    // Enum to define automation types instead of string matching
+    enum class AutomationType {
+        CUSTOM,
+        ON_OFF,
+        LIGHT_AND_THERMOSTAT,
+        SPEAKER_AND_FAN
+    }
 
     private val DRAFT_NAME: String = "New Automation"
     private val DRAFT_DESCRIPTION: String = "New custom automation"
@@ -186,6 +198,18 @@ class DraftViewModel (
                                         else -> { MainActivity.showError(this, "Unexpected operation for Thermostat") }
                                     }
                                 }
+                                FanControl -> {
+                                    val fanModeValue: FanControlTrait.FanModeEnum = starterVM.valueFanMode.value
+                                    val fanControlExpression: TypedExpression<out FanControl> =
+                                        starterExpression as TypedExpression<out FanControl>
+                                    when (starterOperation) {
+                                        StarterViewModel.Operation.EQUALS ->
+                                            condition { expression = fanControlExpression.fanMode equals fanModeValue }
+                                        StarterViewModel.Operation.NOT_EQUALS ->
+                                            condition { expression = fanControlExpression.fanMode notEquals fanModeValue }
+                                        else -> { MainActivity.showError(this, "Unexpected operation for FanControl") }
+                                    }
+                                }
                                 else -> { MainActivity.showError(this, "Unsupported starter for automation creation") }
                             }
                         }
@@ -198,32 +222,54 @@ class DraftViewModel (
                     // Iterate through the selected actions:
                     for (actionVM in actionVMs) {
                         val actionDeviceVM: DeviceViewModel = actionVM.deviceVM.value!!
-                        // Action Expression that the DSL will check for:
-                        action(actionDeviceVM.device, actionDeviceVM.type.value.factory) {
 
-                            val actionCommand: Command = when (actionVM.action.value) {
-                                ActionViewModel.Action.ON -> { OnOff.on() }
-                                ActionViewModel.Action.OFF -> { OnOff.off() }
-                                ActionViewModel.Action.MOVE_TO_LEVEL -> {
-                                    LevelControl.moveToLevelWithOnOff(
-                                        actionVM.valueLevel.value!!,
-                                        0u,
-                                        LevelControlTrait.OptionsBitmap(),
-                                        LevelControlTrait.OptionsBitmap()
-                                    )
+                        // Check if this is a FanControl action (uses update instead of command)
+                        val isFanControlAction = actionVM.action.value in listOf(
+                            ActionViewModel.Action.FAN_OFF,
+                            ActionViewModel.Action.FAN_LOW,
+                            ActionViewModel.Action.FAN_MEDIUM,
+                            ActionViewModel.Action.FAN_HIGH
+                        )
+
+                        if (isFanControlAction) {
+                            // FanControl uses update() pattern instead of command()
+                            action(actionDeviceVM.device, actionDeviceVM.type.value.factory) {
+                                val fanModeValue = when (actionVM.action.value) {
+                                    ActionViewModel.Action.FAN_OFF -> FanControlTrait.FanModeEnum.Off
+                                    ActionViewModel.Action.FAN_LOW -> FanControlTrait.FanModeEnum.Low
+                                    ActionViewModel.Action.FAN_MEDIUM -> FanControlTrait.FanModeEnum.Medium
+                                    ActionViewModel.Action.FAN_HIGH -> FanControlTrait.FanModeEnum.High
+                                    else -> FanControlTrait.FanModeEnum.Off
                                 }
-                                ActionViewModel.Action.MODE_HEAT -> { SimplifiedThermostat
-                                    .setSystemMode(SimplifiedThermostatTrait.SystemModeEnum.Heat) }
-                                ActionViewModel.Action.MODE_COOL -> { SimplifiedThermostat
-                                    .setSystemMode(SimplifiedThermostatTrait.SystemModeEnum.Cool) }
-                                ActionViewModel.Action.MODE_OFF -> { SimplifiedThermostat
-                                    .setSystemMode(SimplifiedThermostatTrait.SystemModeEnum.Off) }
-                                else -> {
-                                    MainActivity.showError(this, "Unexpected operation")
-                                    return@action
-                                }
+                                update(FanControl) { setFanMode(fanModeValue) }
                             }
-                            command(actionCommand)
+                        } else {
+                            action(actionDeviceVM.device, actionDeviceVM.type.value.factory) {
+
+                                val actionCommand: Command = when (actionVM.action.value) {
+                                    ActionViewModel.Action.ON -> { OnOff.on() }
+                                    ActionViewModel.Action.OFF -> { OnOff.off() }
+                                    ActionViewModel.Action.MOVE_TO_LEVEL -> {
+                                        LevelControl.moveToLevelWithOnOff(
+                                            actionVM.valueLevel.value!!,
+                                            0u,
+                                            LevelControlTrait.OptionsBitmap(),
+                                            LevelControlTrait.OptionsBitmap()
+                                        )
+                                    }
+                                    ActionViewModel.Action.MODE_HEAT -> { SimplifiedThermostat
+                                        .setSystemMode(SimplifiedThermostatTrait.SystemModeEnum.Heat) }
+                                    ActionViewModel.Action.MODE_COOL -> { SimplifiedThermostat
+                                        .setSystemMode(SimplifiedThermostatTrait.SystemModeEnum.Cool) }
+                                    ActionViewModel.Action.MODE_OFF -> { SimplifiedThermostat
+                                        .setSystemMode(SimplifiedThermostatTrait.SystemModeEnum.Off) }
+                                    else -> {
+                                        MainActivity.showError(this, "Unexpected operation")
+                                        return@action
+                                    }
+                                }
+                                command(actionCommand)
+                            }
                         }
                     }
                 }
