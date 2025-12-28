@@ -75,20 +75,27 @@ class GhBridgeService : Service() {
     override fun onCreate() {
         super.onCreate()
         Timber.d("GhBridgeService created.")
+        try {
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            multicastLock = wifiManager.createMulticastLock("ghbridge-mdns").apply {
+                setReferenceCounted(true)
+                acquire()
+            }
 
-        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        multicastLock = wifiManager.createMulticastLock("ghbridge-mdns").apply {
-            setReferenceCounted(true)
-            acquire()
+            startServer()
+            advertiseMdns()
+
+            serviceState = GhBridgeConstants.STATE_RUNNING
+            lastServiceInfo = "Service running on port $servicePort"
+            broadcastServiceStatus(serviceState, lastServiceInfo)
+            updateNotification(lastServiceInfo!!)
+        } catch (e: Exception) {
+            Timber.e(e, "Service failed to start.")
+            serviceState = GhBridgeConstants.STATE_FAILED
+            lastServiceInfo = e.message ?: "An unknown error occurred."
+            broadcastServiceStatus(serviceState, lastServiceInfo)
+            updateNotification(lastServiceInfo!!)
         }
-
-        startServer()
-        advertiseMdns()
-
-        serviceState = GhBridgeConstants.STATE_RUNNING
-        lastServiceInfo = "Service running on port $servicePort"
-        broadcastServiceStatus(serviceState, lastServiceInfo)
-        updateNotification(lastServiceInfo!!)
     }
 
     private fun startServer() {

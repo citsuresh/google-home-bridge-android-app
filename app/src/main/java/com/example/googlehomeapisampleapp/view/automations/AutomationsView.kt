@@ -35,7 +35,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -56,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -69,6 +69,7 @@ import com.example.googlehomeapisampleapp.viewmodel.automations.AutomationViewMo
 import com.example.googlehomeapisampleapp.viewmodel.structures.StructureViewModel
 import com.google.home.automation.Action
 import com.google.home.automation.Starter
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -129,6 +130,7 @@ fun AutomationsAccountButton (homeAppVM: HomeAppViewModel) {
 fun AutomationsView (
     homeAppVM: HomeAppViewModel,
     serviceState: String,
+    serviceInfo: String?,
     onToggleServiceClick: () -> Unit
 ) {
     val scope: CoroutineScope = rememberCoroutineScope()
@@ -142,7 +144,7 @@ fun AutomationsView (
         AutomationsTopBar(
             "", 
             listOf(
-                { ServiceStatusIndicator(serviceState, onToggleServiceClick) },
+                { ServiceStatusIndicator(serviceState, serviceInfo, onToggleServiceClick) },
                 { AutomationsAccountButton(homeAppVM) } 
             )
         )
@@ -237,7 +239,10 @@ fun AutomationsTopBar (title: String, buttons: List<@Composable () -> Unit>) {
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(title, fontSize = 24.sp, textAlign = TextAlign.Center)
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             buttons.forEach { button ->
                 button()
             }
@@ -247,24 +252,35 @@ fun AutomationsTopBar (title: String, buttons: List<@Composable () -> Unit>) {
 
 //<editor-fold desc="GH Bridge Service Status Indicator">
 @Composable
-fun ServiceStatusIndicator(serviceState: String, onToggleServiceClick: () -> Unit) {
+fun ServiceStatusIndicator(serviceState: String, serviceInfo: String?, onToggleServiceClick: () -> Unit) {
     val serviceIconColor = when (serviceState) {
-        GhBridgeConstants.STATE_RUNNING -> Color.Green
+        GhBridgeConstants.STATE_RUNNING -> Color(0xFF008000)
         GhBridgeConstants.STATE_STOPPED -> Color.Red
+        GhBridgeConstants.STATE_STARTING, GhBridgeConstants.STATE_STOPPING -> Color.Gray
         else -> Color.Yellow
     }
     val serviceContentDescription = when (serviceState) {
         GhBridgeConstants.STATE_RUNNING -> "Service is running. Click to stop."
         GhBridgeConstants.STATE_STOPPED -> "Service is stopped. Click to start."
+        GhBridgeConstants.STATE_STARTING -> "Service is starting."
+        GhBridgeConstants.STATE_STOPPING -> "Service is stopping."
         else -> "Service is in an unknown state."
+    }
+    val serviceText = when (serviceState) {
+        GhBridgeConstants.STATE_FAILED -> serviceInfo ?: "Service failed."
+        else -> serviceState.lowercase().replaceFirstChar { it.titlecase(Locale.getDefault()) }
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.clickable { onToggleServiceClick() }
     ) {
-        Icon(Icons.Default.Cloud, contentDescription = serviceContentDescription, tint = serviceIconColor)
+        Icon(
+            painter = painterResource(id = R.drawable.ic_service_status),
+            contentDescription = serviceContentDescription,
+            tint = serviceIconColor
+        )
         Spacer(modifier = Modifier.width(8.dp))
-        Text(serviceState, color = serviceIconColor, fontSize = 12.sp)
+        Text(serviceText, color = serviceIconColor, fontSize = 12.sp)
     }
 }
 //</editor-fold>

@@ -93,6 +93,7 @@ import kotlinx.coroutines.launch
 fun HomeAppView(
     homeAppVM: HomeAppViewModel,
     serviceState: String,
+    serviceInfo: String?,
     onToggleServiceClick: () -> Unit
 ) {
     /** Value tracking whether a user is signed-in on the app **/
@@ -237,6 +238,7 @@ fun HomeAppView(
                         HomeAppViewModel.NavigationTab.DEVICES -> DevicesView(
                             homeAppVM = homeAppVM,
                             serviceState = serviceState,
+                            serviceInfo = serviceInfo,
                             onToggleServiceClick = onToggleServiceClick,
                             onRequestCreateRoom = { showCreateRoom.value = true },
                             onRequestRoomSettings = { room -> roomSettingsFor.value = room },
@@ -246,6 +248,7 @@ fun HomeAppView(
                         HomeAppViewModel.NavigationTab.AUTOMATIONS -> AutomationsView(
                             homeAppVM = homeAppVM,
                             serviceState = serviceState,
+                            serviceInfo = serviceInfo,
                             onToggleServiceClick = onToggleServiceClick
                         )
                     }

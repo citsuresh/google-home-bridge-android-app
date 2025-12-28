@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
 
     //<editor-fold desc="GH Bridge Service State">
     private var serviceState by mutableStateOf(GhBridgeConstants.STATE_STOPPED)
+    private var serviceInfo by mutableStateOf<String?>(null)
 
     private var ghBridgeService: GhBridgeService? = null
     private var isBound = false
@@ -102,7 +103,7 @@ class MainActivity : ComponentActivity() {
         // Set the content of the screen to display the app:
         setContent {
             BatteryOptimizationDialog()
-            HomeAppView(homeAppVM, serviceState, ::toggleService)
+            HomeAppView(homeAppVM, serviceState, serviceInfo, ::toggleService)
         }
 
         // Receive the intent extra data to see if it is from AccountSwitchActivity.kt
@@ -173,6 +174,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startGhBridgeService() {
+        broadcastServiceStatus(GhBridgeConstants.STATE_STARTING)
         val serviceIntent = Intent(this, GhBridgeService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent)
@@ -185,6 +187,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun stopGhBridgeService() {
+        broadcastServiceStatus(GhBridgeConstants.STATE_STOPPING)
         if (isBound) {
             unbindService(connection)
             isBound = false
@@ -197,7 +200,14 @@ class MainActivity : ComponentActivity() {
     private val serviceStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             serviceState = intent.getStringExtra(GhBridgeConstants.EXTRA_SERVICE_STATE) ?: "UNKNOWN"
+            serviceInfo = intent.getStringExtra(GhBridgeConstants.EXTRA_SERVICE_INFO)
         }
+    }
+
+    private fun broadcastServiceStatus(state: String) {
+        val intent = Intent(GhBridgeConstants.ACTION_SERVICE_STATUS)
+        intent.putExtra(GhBridgeConstants.EXTRA_SERVICE_STATE, state)
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
     //</editor-fold>
 
