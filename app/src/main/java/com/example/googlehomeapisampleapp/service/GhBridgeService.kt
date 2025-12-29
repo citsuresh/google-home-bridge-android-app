@@ -37,7 +37,6 @@ import io.ktor.server.websocket.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
@@ -102,9 +101,12 @@ class GhBridgeService : Service() {
 
                                     when (cmd) {
                                         "list" -> {
-                                            GlobalScope.launch {
+                                            serviceScope.launch {
                                                 val devices = mutableListOf<ClientDevice>()
                                                 try {
+                                                    if (homeApp == null) {
+                                                        throw IllegalStateException("Service not initialized yet.")
+                                                    }
                                                     val structures: Set<Structure> = homeApp!!.homeClient.structures().first()
                                                     for (structure in structures) {
                                                         val deviceSet: Set<HomeDevice> = structure.devices().first()
@@ -156,14 +158,15 @@ class GhBridgeService : Service() {
                                             }
                                         }
                                         "toggle" -> {
-                                            GlobalScope.launch {
+                                            serviceScope.launch {
                                                 try {
+                                                    if (homeApp == null) {
+                                                        throw IllegalStateException("Service not initialized yet.")
+                                                    }
                                                     val deviceIdElement = json.get("deviceId")
-
                                                     if (deviceIdElement == null || deviceIdElement.isJsonNull) {
                                                         throw IllegalArgumentException("deviceId must be provided.")
                                                     }
-
                                                     val deviceId = deviceIdElement.asString
 
                                                     val structures: Set<Structure> = homeApp!!.homeClient.structures().first()
